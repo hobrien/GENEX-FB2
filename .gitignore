@@ -1,0 +1,49 @@
+# History files
+.Rhistory
+.Rapp.history
+*.RData
+
+# Example code in package build process
+*-Ex.R
+
+# RStudio files
+.Rproj.user/
+*.Rproj
+
+# produced vignettes
+vignettes/*.html
+vignettes/*.pdf
+
+.Rproj.user
+*.rda
+
+# html output from knitR
+R/*.html
+R/*.pdf
+
+# R lib files
+R/libs/*
+
+# Excel files
+*.xls
+*.xlsx
+
+# ipython notebook checkpoints
+Python/.ipynb_checkpoints/*
+
+# Images
+*.png
+
+#Stupid Mac files
+*.DS_Store
+
+# Results folder
+Results/*
+
+# Count data
+Counts/*
+
+# Shinyapp.io info
+Shiny/GENEX-FB2/Data
+Shiny/GENEX-FB2/rsconnect
+
