@@ -148,6 +148,8 @@ write_tsv(filter(me$trans$eqtls, FDR <=.1e-10), "~/BTSync/FetalRNAseq/Github/GEN
 gene_info <- read_tsv("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/genes.txt") %>%
   mutate(gene_id = sub("\\.[0-9]+", "", gene_id)) %>%
   dplyr::select(Id = gene_id, SYMBOL=gene_name, Chr=seqid)
+genotypes <- read_delim("../MatrixEQTL/genotypes_formatted.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
+genotypes_filtered <- semi_join(genotypes, cis, by=c("id" = 'snps'))
 
 cis <- me$cis$eqtls %>% 
    mutate(gene = sub("(ENSG[0-9]+)\\.[0-9]+", '\\1', gene),
@@ -157,8 +159,10 @@ cis <- me$cis$eqtls %>%
        beta = as.numeric(format(beta, digits=2))) %>% 
   dplyr::rename(Id=gene, padj=FDR)
 
-right_join(gene_info, cis) %>% 
-  write_tsv("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Shiny/GENEX-FB2/Data/cis_eqtl.txt")
+cis <- right_join(gene_info, cis)
+cis <- data.frame(snps=genotypes_filtered$id, num_ref=rowSums(snps==0)) %>% inner_join(cis)
+
+write_tsv(cis, "~/BTSync/FetalRNAseq/Github/GENEX-FB2/Shiny/GENEX-FB2/Data/cis_eqtl.txt")
 
 trans <- me$trans$eqtls %>%
   mutate(gene = sub("(ENSG[0-9]+)\\.[0-9]+", '\\1', gene),
@@ -170,11 +174,8 @@ trans <- me$trans$eqtls %>%
 
 trans <- dplyr::select(cis, snps, cisId=Id, cisSYMBOL=SYMBOL) %>% left_join(trans)
 trans <- right_join(gene_info, trans)
+trans <- data.frame(snps=genotypes_filtered$id, num_ref=rowSums(snps==0)) %>% inner_join(trans)
+
 write_tsv(trans, "../Shiny/GENEX-FB2/Data/trans_eqtl.txt")
-
-genotypes <- read_delim("../MatrixEQTL/genotypes_formatted.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
-genotypes_filtered <- semi_join(genotypes, cis, by=c("id" = 'snps'))
-write_tsv(genotypes_filtered, "../Shiny/GENEX-FB2/Data/genotypes.txt")
-
 
 save.image(file="~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/results.RData")

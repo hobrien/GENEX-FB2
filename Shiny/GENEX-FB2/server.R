@@ -18,15 +18,10 @@ library(DT)
 
 
 # setwd("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Shiny/GENEX-FB2/")
-snps <- read_delim("./Data/genotypes.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
-# geneID='LRRC37A'
-# snp='rs62062276'
 counts <- read_delim("./Data/counts.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
 cis <- read_delim("./Data/cis_eqtl.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
-cis <- data.frame(snps=snps$id, num_ref=rowSums(snps==0)) %>% inner_join(cis)
 top_cis <- cis %>% group_by(SYMBOL) %>% arrange(pvalue) %>% slice(1) %>% ungroup()
 trans <- read_delim("./Data/trans_eqtl.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
-trans <- data.frame(snps=snps$id, num_ref=rowSums(snps==0)) %>% inner_join(trans)
 top_trans <- trans %>% group_by(SYMBOL, cisSYMBOL) %>% arrange(pvalue) %>% slice(1) %>% ungroup()
 
 target <- read_delim("./Data/target.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
