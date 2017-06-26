@@ -36,14 +36,14 @@ vcf_file_name = "/Volumes/FetalRNAseq/Processed/chr_all.dose.rename.filter_sampl
 python_script_name = "~/BTsync/FetalRNAseq/LabNotes/Python/VCF2numeric.py"
 snps_location_file_name = "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/snp_pos.txt"
 snps_file_name = "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/genotypes.txt"
-
+alt_threshold = 10
 # use file tests to avoid re-doing unnecessary shell commands, which are pretty time consuming
 if (! file_test("-f", vcf_file_name)) {
   system(paste('bcftools concat', individual_vcf_files, '>', vcf_file_name))
 }
 
 if (! file_test("-f", snps_location_file_name) | ! file_test("-f", snps_file_name)) {
-  system(paste('bcftools view', vcf_file_name, '| python', python_script_name, snps_file_name, snps_location_file_name))
+  system(paste('bcftools view', vcf_file_name, '| python', python_script_name, snps_file_name, snps_location_file_name, alt_threshold))
 }
 
 snp_tbl<- read_delim(snps_file_name, delim='\t')
@@ -97,7 +97,9 @@ snps$LoadFile( geneotype_file_name );
 
 #extract gene positions from GTF file
 gene_location_file_name = "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/geneloc.txt"
-system(paste('echo "geneid\tchr\ts1\ts2" >', gene_location_file_name))
+if (! file_test("-f", gene_location_file_name)) {
+  system(paste('echo "geneid\tchr\ts1\ts2" >', gene_location_file_name))
+}
 system(paste("cat ~/BTSync/FetalRNAseq/Ref/genes.gtf | awk '{if ($3 == \"gene\") print $10, $1, $4, $5}' | sed 's/[\";]//g' >>", gene_location_file_name))
 gene_location_file_name = "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/geneloc.txt"
 genepos = read.table(gene_location_file_name, header = TRUE, stringsAsFactors = FALSE);
@@ -109,7 +111,7 @@ snpspos = read.table(snps_location_file_name, header = TRUE, stringsAsFactors = 
 output_file_name_cis = "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/cis_eqtl.txt"
 output_file_name_tra = "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/trans_eqtl.txt"
 
-pvOutputThreshold_cis = 1e-10;
+pvOutputThreshold_cis = 1e-5;
 pvOutputThreshold_tra = 1e-10;
 
 cisDist = 1e6;
@@ -139,8 +141,10 @@ me = Matrix_eQTL_main(
 unlink(output_file_name_tra);
 unlink(output_file_name_cis);
 
-write_tsv(filter(me$cis$eqtls, FDR <=.1), "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/cis_eqtl.txt")
-write_tsv(filter(me$trans$eqtls, FDR <=.1), "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/trans_eqtl.1.txt")
-write_tsv(filter(me$trans$eqtls, FDR <=.1e-10), "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/trans_eqtl.txt")
+write_tsv(me$cis$eqtls, "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/cis_eqtl.txt")
+write_tsv(me$trans$eqtls, "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/trans_eqtl.txt")
+write_tsv(filter(me$trans$eqtls, FDR <=.1e-10), "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/trans_eqtl_e10.txt")
+
+
 
 save.image(file="~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/results.RData")
