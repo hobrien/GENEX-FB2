@@ -23,6 +23,18 @@ cis <- read_delim("../MatrixEQTL/cis_eqtl.txt", "\t", escape_double = FALSE, tri
 right_join(gene_info, cis) %>% 
   write_tsv("../Shiny/GENEX-FB2/Data/cis_eqtl.txt")
 
+trans <- read_delim("../MatrixEQTL/trans_eqtl.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  mutate(gene = sub("(ENSG[0-9]+)\\.[0-9]+", '\\1', gene),
+         statistic = as.numeric(format(statistic, digits=2)), 
+         pvalue = as.numeric(format(pvalue, digits=2)), 
+         FDR = as.numeric(format(FDR, digits=2)),
+         beta = as.numeric(format(beta, digits=2))) %>%
+  rename(Id=gene, padj=FDR)
+
+trans <- dplyr::select(cis, snps, cisId=Id, cisSYMBOL=SYMBOL) %>% left_join(trans)
+trans <- right_join(gene_info, trans)
+write_tsv(trans, "../Shiny/GENEX-FB2/Data/trans_eqtl.txt")
+
 genotypes <- read_delim("../MatrixEQTL/genotypes_formatted.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
 genotypes_filtered <- semi_join(genotypes, cis, by=c("id" = 'snps'))
 write_tsv(genotypes_filtered, "../Shiny/GENEX-FB2/Data/genotypes.txt")
