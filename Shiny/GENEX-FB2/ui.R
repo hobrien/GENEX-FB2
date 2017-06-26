@@ -28,14 +28,24 @@ navbarPage("Gene Expression in the Fetal Brain: EQTL:",
                          conditionalPanel(
                            'input.dataset === "All Cis"',
                            plotOutput("eQTLplotAll", height=200)
+                         ),
+                         conditionalPanel(
+                           'input.dataset === "Top Trans"',
+                           plotOutput("eQTLplotTransTop", height=200)
+                         ),
+                         conditionalPanel(
+                           'input.dataset === "All Trans"',
+                           plotOutput("eQTLplotTransAll", height=200)
                          )
                          
                         ),
                        mainPanel(
                          tabsetPanel(
                            id = 'dataset',
-                           tabPanel('Top Cis', DT::dataTableOutput('mytable1')),
-                           tabPanel('All Cis', DT::dataTableOutput('mytable2'))
+                           tabPanel('Top Cis', DT::dataTableOutput('TopCisTable')),
+                           tabPanel('All Cis', DT::dataTableOutput('AllCisTable')),
+                           tabPanel('Top Trans', DT::dataTableOutput('TopTransTable')),
+                           tabPanel('All Trans', DT::dataTableOutput('AllTransTable'))
                          )   
                        )
                        

@@ -18,20 +18,20 @@ library(DT)
 
 
 # setwd("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Shiny/GENEX-FB2/")
+snps <- read_delim("./Data/genotypes.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
+# geneID='LRRC37A'
+# snp='rs62062276'
 counts <- read_delim("./Data/counts.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
 cis <- read_delim("./Data/cis_eqtl.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
 cis <- data.frame(snps=snps$id, num_ref=rowSums(snps==0)) %>% inner_join(cis)
 top_cis <- cis %>% group_by(SYMBOL) %>% arrange(pvalue) %>% slice(1) %>% ungroup()
-fitted <- read_delim("./Data/fitted.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
-  mutate(pvalue = as.numeric(format(pvalue, digits=2)), padj = as.numeric(format(padj, digits=2))) %>%
-  dplyr::rename(log2FoldDiff = log2FoldChange)
+trans <- read_delim("./Data/trans_eqtl.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
+trans <- data.frame(snps=snps$id, num_ref=rowSums(snps==0)) %>% inner_join(trans)
+top_trans <- trans %>% group_by(SYMBOL, cisSYMBOL) %>% arrange(pvalue) %>% slice(1) %>% ungroup()
 
 target <- read_delim("./Data/target.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   mutate(label=as.character(label))
 
-snps <- read_delim("./Data/genotypes.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
-# geneID='LRRC37A'
-# snp='rs62062276'
 PlotEQTL<-function(row_num, counts, cis, target, snps) {
   qtl_stats <- cis[row_num,]
   geneID <- qtl_stats$SYMBOL
@@ -70,18 +70,29 @@ shinyServer(function(input, output) {
   output$SciNotation <- reactive({
     paste0("p-value: ", 10^input$pvalue)
   })
-  output$row_selected = renderPrint(input$mytable1_rows_selected)
   output$eQTLplotTop <- renderPlot({
-    PlotEQTL(input$mytable1_rows_selected, counts, top_cis[top_cis[, input$p_type] < 10^input$pvalue, ], target, snps)
+    PlotEQTL(input$TopCisTable_rows_selected, counts, top_cis[top_cis[, input$p_type] < 10^input$pvalue, ], target, snps)
   })
   output$eQTLplotAll <- renderPlot({
-    PlotEQTL(input$mytable2_rows_selected, counts, cis[cis[, input$p_type] < 10^input$pvalue, ], target, snps)
+    PlotEQTL(input$AllCisTable_rows_selected, counts, cis[cis[, input$p_type] < 10^input$pvalue, ], target, snps)
   })
-  output$mytable1 <- DT::renderDataTable({
+  output$eQTLplotTransTop <- renderPlot({
+    PlotEQTL(input$TopTransTable_rows_selected, counts, top_trans[top_trans[, input$p_type] < 10^input$pvalue, ], target, snps)
+  })
+  output$eQTLplotTransAll <- renderPlot({
+    PlotEQTL(input$AllTransTable_rows_selected, counts, trans[trans[, input$p_type] < 10^input$pvalue, ], target, snps)
+  })
+  output$TopCisTable <- DT::renderDataTable({
     DT::datatable(top_cis[top_cis[, input$p_type] < 10^input$pvalue, ], selection = 'single')
   })
-  output$mytable2 <- DT::renderDataTable({
+  output$AllCisTable <- DT::renderDataTable({
     DT::datatable(cis[cis[, input$p_type] < 10^input$pvalue, ], selection = 'single')
+  })
+  output$TopTransTable <- DT::renderDataTable({
+    DT::datatable(top_trans[top_trans[, input$p_type] < 10^input$pvalue, ], selection = 'single')
+  })
+  output$AllTransTable <- DT::renderDataTable({
+    DT::datatable(trans[trans[, input$p_type] < 10^input$pvalue, ], selection = 'single')
   })
   output$download12_19 <- downloadHandler(
     filename = function() { 'cis_eqtl.csv' },
