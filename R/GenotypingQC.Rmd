@@ -1,0 +1,145 @@
+---
+title: "Genotyping QC"
+output: html_notebook
+---
+
+- See the [wiki](http://wiki.psycm.cf.ac.uk/wiki/index.php/GWAS_Quality_control_(QC)_pipeline) for QC steps
+
+```{r setup}
+library(tidyverse)
+VCFindex <- read_delim("~/BTSync/FetalRNAseq/LabNotes/VCFindex.txt", 
+     "\t", escape_double = FALSE, col_names = c('Sample', 'Index', 'VCF'), 
+     trim_ws = TRUE)
+SampleInfo <- read_delim("~/BTSync/FetalRNAseq/Github/GENEX-FB1/Data/SampleInfo.txt", 
+     "\t", escape_double = FALSE, col_types = cols(Sample = col_character()), 
+     trim_ws = TRUE)
+
+key <- read_delim("/Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/key.txt", 
+     "\t", escape_double = FALSE, col_names = c('Sample', 'IID'), 
+     trim_ws = TRUE)
+
+sample_info <- read_delim("~/BTSync/FetalRNAseq/LabNotes/sample_info.txt", 
+     "\t", escape_double = FALSE, col_types = cols(BrainBankID = col_character(), 
+         PCW = col_double()), trim_ws = TRUE)
+
+sample_info <- sample_info %>% mutate(PCW=floor(PCW)) %>% 
+  select(Sample=BrainBankID, Sex, PCW) %>% 
+  anti_join(SampleInfo, by="Sample") %>% 
+  bind_rows(mutate(SampleInfo, PCW=as.numeric(PCW))) %>% 
+  full_join(key) %>% full_join(VCFindex) %>% 
+  select(Sample, Index, IID, VCF, everything()) %>%
+  mutate(Sex=ifelse(IID %in% c('200720170117_R05C01', '200720170117_R12C01', '200720170085_R10C02'), 'Male',
+                    ifelse(IID %in% c('200720170117_R06C01', '200720170117_R11C01', '200720170117_R11C02'), 
+                           'Female', Sex)))
+
+write_tsv(sample_info, "~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/SampleInfo.txt")
+
+```
+```{bash plinkSex}
+cd /Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054
+
+# convert to binary
+~/bin/plink --file Nick_Bray_OmniExpress_230317 --make-bed --out FB_new
+
+# remove blank samples
+echo 24 > excluded_fam.txt
+seq 45 48 >> excluded_fam.txt
+~/bin/plink --bfile FB_new --remove-fam excluded_fam.txt --make-bed --out FB_new_excl_blank
+
+# add Sex
+grep FB_new ~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/SampleInfo.txt | cut -f 2,3,5 | perl -pe 's/Male/1/; s/Female/2/; s/NA/0/' > gender.txt  
+~/bin/plink --bfile FB_new_excl_blank --update-sex gender.txt --make-bed --out FB_new_with_sex
+~/bin/plink --bfile FB_new_with_sex --check-sex --out FB_new_with_sex_sexcheck
+```
+
+```{bash plinkMiss}
+# Investigate missingness rates
+~/bin/plink --bfile FB_new_with_sex --missing --out FB_new_with_sex_miss
+```
+- One sample (12972) has a call rate of 97.7%
+- All others are > 99%
+
+```{r IMISS}
+IMISS = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/FB_new_with_sex_miss.imiss", h=T, as.is=T)
+plot((1:dim(IMISS)[1])/(dim(IMISS)[1]-1), sort(1-IMISS$F_MISS), main ="Ordered individual Call Rate", xlab="Quantile", ylab="Call Rate"); grid()
+filter(IMISS, F_MISS > .01) %>% left_join(sample_info)
+```
+- 92.3% of SNPs are complete
+- 5.5% have one missing call
+- 2.2% have > 1 missing call
+- If I filter on missingness of 2% or less, it will remove all snps with missing calls because there are only 43 samples
+```{r LMISS}
+LMISS = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/FB_new_with_sex_miss.lmiss", h=T, as.is=T)
+plot((1:dim(LMISS)[1])/(dim(LMISS)[1]-1), sort(1-LMISS$F_MISS), main ="Ordered SNP Coverage", xlab="Quantile", ylab="Coverage"); grid()
+
+LMISS %>%
+  arrange(desc(F_MISS)) %>%
+  mutate(rank=row_number()) %>% 
+  ggplot(aes(x=rank, y=1-F_MISS)) + geom_point()
+
+group_by(LMISS, N_MISS) %>% summarise(n()/nrow(LMISS))
+
+```
+
+
+# Minor Allele Frequency
+```{bash plinkMAF}
+cd /Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054
+~/bin/plink --bfile FB_new_with_sex --freq --out FB_new_with_sex_freq
+```
+```{r MAF}
+FREQ = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/FB_new_with_sex_freq.frq", h=T, as.is=T)
+
+ggplot(FREQ, aes(x=MAF)) + geom_freqpoly(bins=44)
+
+```
+
+# Heterozygosity
+
+- 6 samples have low F and high H (suggests possible sample contamination?)
+```{bash plink_heterozygosity}
+cd /Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054
+~/bin/plink --bfile FB_new_with_sex --het --out FB_new_with_sex_het
+```
+```{r Heterozygosity}
+HET = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/FB_new_with_sex_het.het", h=T, as.is=T)
+HET <- HET %>% mutate(H=(N.NM. - O.HOM.) / N.NM.)
+ggplot(HET, aes(x=H)) +
+  geom_histogram() +
+  geom_text(aes(label=IID), y=2, data=filter(HET, H>0.322), angle=-45, vjust=0, hjust=1)
+
+ggplot(HET, aes(x=F)) + 
+  geom_histogram() +
+  geom_text(aes(label=IID), y=2, data=filter(HET, F< -0.01), angle=45, vjust=0, hjust=0)
+
+filter(HET, F< -.01) %>% left_join(sample_info)
+```
+
+# Hardy-Weinberg Equilibrium
+- very few loci violating HWE. This might be down to small sample size
+
+```{bash plink_hwe}
+cd /Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054
+~/bin/plink --bfile FB_new_with_sex --hardy  --out FB_new_with_sex_hwe
+```
+
+```{r HWE}
+HWE = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/FB_new_with_sex_hwe.hwe", h=T, as.is=T)
+ggplot(HWE, aes(x=log10(P))) + 
+  geom_histogram() 
+filter(HWE, P<0.1) %>%
+  ggplot(aes(x=log10(P)))+geom_histogram()
+```
+
+# PCA
+
+```{bash plinkPCA}
+cd /Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054
+~/bin/plink --bfile FB_new_with_sex --pca  --out FB_new_with_sex_pca
+```
+
+``` {r PCA}
+PCA = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/FB_new_with_sex_pca.eigenvec", h=F, as.is=T)
+
+ggplot(PCA, aes(x=V3, y=V4))+geom_point()+xlab('PCA1')+ylab('PCA2')
+```
