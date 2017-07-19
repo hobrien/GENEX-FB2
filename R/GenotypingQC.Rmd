@@ -5,6 +5,9 @@ output: html_notebook
 
 - See the [wiki](http://wiki.psycm.cf.ac.uk/wiki/index.php/GWAS_Quality_control_(QC)_pipeline) for QC steps
 
+- add sex for samples with missing metadata
+- 12994 genotyped twice, need to manually filter out duplicate rows after going with VCFindex
+
 ```{r setup}
 library(tidyverse)
 VCFindex <- read_delim("~/BTSync/FetalRNAseq/LabNotes/VCFindex.txt", 
@@ -14,7 +17,7 @@ SampleInfo <- read_delim("~/BTSync/FetalRNAseq/Github/GENEX-FB1/Data/SampleInfo.
      "\t", escape_double = FALSE, col_types = cols(Sample = col_character()), 
      trim_ws = TRUE)
 
-key <- read_delim("/Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/key.txt", 
+key <- read_delim("/Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/key.txt", 
      "\t", escape_double = FALSE, col_names = c('Sample', 'IID'), 
      trim_ws = TRUE)
 
@@ -22,30 +25,67 @@ sample_info <- read_delim("~/BTSync/FetalRNAseq/LabNotes/sample_info.txt",
      "\t", escape_double = FALSE, col_types = cols(BrainBankID = col_character(), 
          PCW = col_double()), trim_ws = TRUE)
 
-sample_info <- sample_info %>% mutate(PCW=floor(PCW)) %>% 
+all_sample_info <- sample_info %>% mutate(PCW=floor(PCW)) %>% 
   select(Sample=BrainBankID, Sex, PCW) %>% 
   anti_join(SampleInfo, by="Sample") %>% 
   bind_rows(mutate(SampleInfo, PCW=as.numeric(PCW))) %>% 
-  full_join(key) %>% full_join(VCFindex) %>% 
+  full_join(key) %>% 
+  full_join(VCFindex) %>% 
+  filter(!(IID == '200720170085_R04C02' & Index == 32)) %>%
+  filter(!(IID == '200720170117_R10C01' & Index == 19)) %>%
   select(Sample, Index, IID, VCF, everything()) %>%
   mutate(Sex=ifelse(IID %in% c('200720170117_R05C01', '200720170117_R12C01', '200720170085_R10C02'), 'Male',
                     ifelse(IID %in% c('200720170117_R06C01', '200720170117_R11C01', '200720170117_R11C02'), 
                            'Female', Sex)))
-
-write_tsv(sample_info, "~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/SampleInfo.txt")
+group_by(all_sample_info, Sample) %>% summarise(n=n()) %>% filter(n> 1)
+write_tsv(all_sample_info, "~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/SampleInfo.txt")
 
 ```
-```{bash plinkSex}
-cd /Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054
+
+# Merge Plink files
+- This produces files where there are two-three samples with each FID (two from the previously merged file plus one from the new file)
+- I will have to be careful about doing analyses that use this information
+- I also need the FIDs to update the Sex info.
+- The safest thing to do is probably to update the FIDs so they are unique for each sample
+- The easiest way that I know of to extract FIDs is to run a heterozygosity analysis
+
+```{bash plinkMerge}
+cd /Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping
 
 # convert to binary
-~/bin/plink --file Nick_Bray_OmniExpress_230317 --make-bed --out FB_new
+~/bin/plink --file PLINK_040517_1054/Nick_Bray_OmniExpress_230317 --make-bed --out FB_new
 
 # remove blank samples
 echo 24 > excluded_fam.txt
 seq 45 48 >> excluded_fam.txt
 ~/bin/plink --bfile FB_new --remove-fam excluded_fam.txt --make-bed --out FB_new_excl_blank
 
+# merge
+mkdir Merged
+echo FB_Merged >all_my_files.txt
+~/bin/plink --bfile FB_new_excl_blank --merge-list all_my_files.txt --make-bed --out Merged/FB_all
+
+~/bin/plink --bfile Merged/FB_all --het --out Merged/FB_all
+```
+
+```{r getFIDs}
+HET = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/Merged/FB_all.het", h=T, as.is=T)
+
+newFID <- all_sample_info %>% 
+  mutate(newFID=paste0(VCF, Index), newIID=IID) %>% 
+  select(IID, newFID, newIID) %>% 
+  right_join(HET) %>% 
+  select(FID, IID, newFID, newIID)
+write_tsv(newFID, "~/BTSync/FetalRNAseq/Genome-wide\ genotyping/Merged/newFID.txt", col_names=FALSE)
+```
+
+``` {bash plinkFID}
+cd ~/BTSync/FetalRNAseq/Genome-wide\ genotyping/Merged/
+~/bin/plink --bfile FB_all --update-ids newFID.txt --make-bed --out FB_all_newFID
+```
+
+```{bash plinkSex}
+cd /Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054
 # add Sex
 grep FB_new ~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/SampleInfo.txt | cut -f 2,3,5 | perl -pe 's/Male/1/; s/Female/2/; s/NA/0/' > gender.txt  
 ~/bin/plink --bfile FB_new_excl_blank --update-sex gender.txt --make-bed --out FB_new_with_sex
@@ -62,7 +102,7 @@ grep FB_new ~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/SampleInfo.txt | cut -f 2
 ```{r IMISS}
 IMISS = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/FB_new_with_sex_miss.imiss", h=T, as.is=T)
 plot((1:dim(IMISS)[1])/(dim(IMISS)[1]-1), sort(1-IMISS$F_MISS), main ="Ordered individual Call Rate", xlab="Quantile", ylab="Call Rate"); grid()
-filter(IMISS, F_MISS > .01) %>% left_join(sample_info)
+filter(IMISS, F_MISS > .01) %>% left_join(all_sample_info)
 ```
 - 92.3% of SNPs are complete
 - 5.5% have one missing call
@@ -112,7 +152,7 @@ ggplot(HET, aes(x=F)) +
   geom_histogram() +
   geom_text(aes(label=IID), y=2, data=filter(HET, F< -0.01), angle=45, vjust=0, hjust=0)
 
-filter(HET, F< -.01) %>% left_join(sample_info)
+filter(HET, F< -.01) %>% left_join(all_sample_info)
 ```
 
 # Hardy-Weinberg Equilibrium
