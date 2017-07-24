@@ -20,6 +20,8 @@ vignettes/*.pdf
 # html output from knitR
 R/*.html
 R/*.pdf
+R/*.knit.md
+R/*.utf8.md
 
 # R lib files
 R/libs/*
@@ -40,6 +42,10 @@ Python/.ipynb_checkpoints/*
 # Results folders
 Results/*
 MatrixEQTL/*
+Genotyping/*
+
+# Genome Scale files
+Data/HRC.r1-1.GRCh37.wgs.mac5.sites.tab
 
 # Count data
 Counts/*
