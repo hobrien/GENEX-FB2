@@ -10,6 +10,8 @@ output: html_notebook
 
 ```{r setup}
 library(tidyverse)
+library(RColorBrewer)
+source("..//Shiny/GENEX-FB2/FormatGGplot.R")
 VCFindex <- read_delim("~/BTSync/FetalRNAseq/LabNotes/VCFindex.txt", 
      "\t", escape_double = FALSE, col_names = c('Sample', 'Index', 'VCF'), 
      trim_ws = TRUE)
@@ -31,15 +33,24 @@ all_sample_info <- sample_info %>% mutate(PCW=floor(PCW)) %>%
   bind_rows(mutate(SampleInfo, PCW=as.numeric(PCW))) %>% 
   full_join(key) %>% 
   full_join(VCFindex) %>% 
+  mutate(FID=paste0(VCF, Index)) %>%
   filter(!(IID == '200720170085_R04C02' & Index == 32)) %>%
   filter(!(IID == '200720170117_R10C01' & Index == 19)) %>%
-  select(Sample, Index, IID, VCF, everything()) %>%
+  select(Sample, FID, IID, VCF, everything()) %>%
   mutate(Sex=ifelse(IID %in% c('200720170117_R05C01', '200720170117_R12C01', '200720170085_R10C02'), 'Male',
                     ifelse(IID %in% c('200720170117_R06C01', '200720170117_R11C01', '200720170117_R11C02'), 
                            'Female', Sex)))
 group_by(all_sample_info, Sample) %>% summarise(n=n()) %>% filter(n> 1)
 write_tsv(all_sample_info, "~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/SampleInfo.txt")
 
+Omni25_regions_With_Code <- read_delim("../Genotyping/1KGP_Heath/Omni25.regions_With_Code.txt", 
+     "\t", escape_double = FALSE, col_names = FALSE, 
+     trim_ws = TRUE) %>% full_join(read_delim("../Genotyping/1KGP_Heath/Omni25.regions_With_Gpop_Code.txt", 
+     "\t", escape_double = FALSE, col_names = FALSE, 
+     trim_ws = TRUE), by='X1'
+) %>%
+  select(IID=X1, POP=X2.x, SuperPop=X2.y, PopNum=X3.x)
+all_sample_info <- mutate(all_sample_info, POP=VCF, SuperPop=VCF) %>% full_join(Omni25_regions_With_Code)
 ```
 
 # Merge Plink files
@@ -50,136 +61,252 @@ write_tsv(all_sample_info, "~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/SampleInf
 - The easiest way that I know of to extract FIDs is to run a heterozygosity analysis
 
 ```{bash plinkMerge}
-cd /Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping
 
+cd ../Genotyping
+
+# warnings are printed to log, so they don't need to be echoed here
 # convert to binary
-~/bin/plink --file PLINK_040517_1054/Nick_Bray_OmniExpress_230317 --make-bed --out FB_new
+~/bin/plink --file PLINK_040517_1054/Nick_Bray_OmniExpress_230317 --make-bed --out PLINK_040517_1054/FB_new > /dev/null 2>&1
 
 # remove blank samples
 echo 24 > excluded_fam.txt
 seq 45 48 >> excluded_fam.txt
-~/bin/plink --bfile FB_new --remove-fam excluded_fam.txt --make-bed --out FB_new_excl_blank
+~/bin/plink --bfile PLINK_040517_1054/FB_new --remove-fam excluded_fam.txt --make-bed --out PLINK_040517_1054/FB_new_excl_blank > /dev/null 2>&1
 
 # merge
 mkdir Merged
-echo FB_Merged >all_my_files.txt
-~/bin/plink --bfile FB_new_excl_blank --merge-list all_my_files.txt --make-bed --out Merged/FB_all
+#echo FB_Merged >all_my_files.txt
+~/bin/plink --bfile PLINK_040517_1054/FB_new_excl_blank --bmerge Set1/FB_Merged --make-bed --out Merged/FB_all > /dev/null 2>&1
 
-~/bin/plink --bfile Merged/FB_all --het --out Merged/FB_all
+~/bin/plink --bfile Merged/FB_all --het --out Merged/FB_all_het  > /dev/null 2>&1
 ```
 
 ```{r getFIDs}
-HET = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/Merged/FB_all.het", h=T, as.is=T)
+HET = read.table("../Genotyping/Merged/FB_all_het.het", h=T, as.is=T)
 
 newFID <- all_sample_info %>% 
-  mutate(newFID=paste0(VCF, Index), newIID=IID) %>% 
-  select(IID, newFID, newIID) %>% 
+  mutate(newIID=IID) %>% 
+  select(IID, newFID=FID, newIID) %>% 
   right_join(HET) %>% 
   select(FID, IID, newFID, newIID)
-write_tsv(newFID, "~/BTSync/FetalRNAseq/Genome-wide\ genotyping/Merged/newFID.txt", col_names=FALSE)
+write_tsv(newFID, "../Genotyping/Merged/newFID.txt", col_names=FALSE)
 ```
 
 ``` {bash plinkFID}
-cd ~/BTSync/FetalRNAseq/Genome-wide\ genotyping/Merged/
-~/bin/plink --bfile FB_all --update-ids newFID.txt --make-bed --out FB_all_newFID
+# warnings are printed to log, so they don't need to be echoed here
+cd ../Genotyping
+~/bin/plink --bfile Merged/FB_all --update-ids Merged/newFID.txt --make-bed --out Merged/FB_all_newFID > /dev/null 2>&1
 ```
 
+# Add Sex info to PLINK file
 ```{bash plinkSex}
-cd /Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054
+cd ../Genotyping
 # add Sex
-grep FB_new ~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/SampleInfo.txt | cut -f 2,3,5 | perl -pe 's/Male/1/; s/Female/2/; s/NA/0/' > gender.txt  
-~/bin/plink --bfile FB_new_excl_blank --update-sex gender.txt --make-bed --out FB_new_with_sex
-~/bin/plink --bfile FB_new_with_sex --check-sex --out FB_new_with_sex_sexcheck
+cat ../Data/SampleInfo.txt | cut -f 2,3,5 | perl -pe 's/Male/1/; s/Female/2/; s/NA/0/' > Merged/gender.txt  
+~/bin/plink --bfile Merged/FB_all_newFID --update-sex Merged/gender.txt --make-bed --out  Merged/FB_all_with_sex > /dev/null 2>&1
+
+~/bin/plink --bfile Merged/FB_all_with_sex --check-sex --out Merged/FB_all_with_sex_check > /dev/null 2>&1
 ```
+- 4 samples have intermediate sex genotypes, one of which (18655) is included in the sex diffs study
+    - This sample clusters with other Females in PCA
+    -  I've already tried excluding it because of the sequencing depth and it made very little difference
+- 1 sample (17118) is coded as Male but with a female genotype
+``` {r SexCheck}
+SexCheck <- read.table("../Genotyping/Merged/FB_all_with_sex_check.sexcheck", h=T, as.is=T)
+full_join(SexCheck, all_sample_info) %>% View()
+```
+
+```{bash plinkMerge1kg}
+cd ../Genotyping
+
+# warnings are printed to log, so they don't need to be echoed here
+~/bin/plink --bfile Merged/FB_all_with_sex --bmerge 1KGP_Heath/omni25.2141_1KG_HeathSNPs --make-bed --out Merged/FB_all_1kg > /dev/null 2>&1
+
+~/bin/plink --bfile 1KGP_Heath/omni25.2141_1KG_HeathSNPs --flip Merged/FB_all_1kg-merge.missnp --make-bed --out 1KGP_Heath/omni25.2141_1KG_HeathSNPs_flip  > /dev/null 2>&1
+
+~/bin/plink --bfile Merged/FB_all_with_sex --bmerge 1KGP_Heath/omni25.2141_1KG_HeathSNPs_flip --make-bed --out Merged/FB_all_1kg2  > /dev/null 2>&1
+
+~/bin/plink --bfile 1KGP_Heath/omni25.2141_1KG_HeathSNPs_flip --exclude Merged/FB_all_1kg2-merge.missnp --make-bed --out 1KGP_Heath/omni25.2141_1KG_HeathSNPs_flip_excl  > /dev/null 2>&1
+
+~/bin/plink --bfile Merged/FB_all_with_sex --bmerge 1KGP_Heath/omni25.2141_1KG_HeathSNPs_flip_excl --make-bed --out Merged/FB_all_1kg3  > /dev/null 2>&1
+
+```
+
+
+# Investigate missingness rates
 
 ```{bash plinkMiss}
-# Investigate missingness rates
-~/bin/plink --bfile FB_new_with_sex --missing --out FB_new_with_sex_miss
+
+cd ../Genotyping
+
+~/bin/plink --bfile Merged/FB_all_1kg3 --missing --out Merged/FB_all_1kg3_miss  > /dev/null 2>&1
 ```
-- One sample (12972) has a call rate of 97.7%
-- All others are > 99%
+- A225 has a call rate of 83.5%, 17751 has a call rate of 89.8% and 18983 has a call rate of 92.8%
+- 8 samples have call rates between 95% and 99%
+- None have call rates >99%
+- When looking just at new samples, almost all were >99%, so this must be due to merging files with different SNPs
+
+- Most of our samples have less missing loci than any of the 1kg samples. This is because Alex gave me a file with only my SNPs in it and the reference panel is clearly not typed for all of our SNPs
 
 ```{r IMISS}
-IMISS = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/FB_new_with_sex_miss.imiss", h=T, as.is=T)
-plot((1:dim(IMISS)[1])/(dim(IMISS)[1]-1), sort(1-IMISS$F_MISS), main ="Ordered individual Call Rate", xlab="Quantile", ylab="Call Rate"); grid()
-filter(IMISS, F_MISS > .01) %>% left_join(all_sample_info)
-```
-- 92.3% of SNPs are complete
-- 5.5% have one missing call
-- 2.2% have > 1 missing call
-- If I filter on missingness of 2% or less, it will remove all snps with missing calls because there are only 43 samples
-```{r LMISS}
-LMISS = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/FB_new_with_sex_miss.lmiss", h=T, as.is=T)
-plot((1:dim(LMISS)[1])/(dim(LMISS)[1]-1), sort(1-LMISS$F_MISS), main ="Ordered SNP Coverage", xlab="Quantile", ylab="Coverage"); grid()
+IMISS = read.table("../Genotyping/Merged/FB_all_1kg3_miss.imiss", h=T, as.is=T)
 
+IMISS <- IMISS %>%
+  arrange(desc(F_MISS)) %>%
+  mutate(rank=row_number()) %>% 
+  left_join(all_sample_info, by="IID")
+
+ggplot(filter(IMISS, is.na(VCF)), aes(x=rank, y=1-F_MISS)) + 
+  geom_point(aes(colour=SuperPop), alpha=.1) +
+  geom_point(size=.5, data=filter(IMISS, !is.na(VCF))) +
+  geom_text(aes(label=Sample), colour='black', hjust=0, nudge_x=20, data=filter(IMISS, !is.na(VCF) & F_MISS> 0.04)) +
+  geom_hline(yintercept=.98) +
+  main_theme() +
+  theme(legend.position=c(.9,.5)) +
+  scale_colour_brewer(type = "qual", palette = 6) +
+  scale_y_continuous(limits=c(NA, 1)) +
+  guides(colour = guide_legend(override.aes = list(alpha = 1)))
+
+
+filter(IMISS, F_MISS > .02) %>% left_join(all_sample_info) %>% arrange(desc(F_MISS))
+```
+- 53% of SNPs are complete
+- 31% have one missing call
+- 96% have <2% missing calls
+
+- These numbers are a lot lower after adding 1kg data (5%, 10% and 91.5%)
+```{r LMISS}
+LMISS = read.table("../Genotyping/Merged/FB_all_1kg3_miss.lmiss", h=T, as.is=T)
 LMISS %>%
   arrange(desc(F_MISS)) %>%
   mutate(rank=row_number()) %>% 
-  ggplot(aes(x=rank, y=1-F_MISS)) + geom_point()
+  ggplot(aes(x=rank, y=1-F_MISS)) + 
+  geom_point(alpha=.1, size=.5) + 
+  geom_hline(yintercept =0.98 ) +
+  main_theme() +
+  theme(legend.position=c(.9,.8)) +
+  scale_colour_brewer(type = "qual", palette = 6)
 
-group_by(LMISS, N_MISS) %>% summarise(n()/nrow(LMISS))
 
+group_by(LMISS, N_MISS) %>% summarise(perc=(n()/nrow(LMISS))*100)
+filter(LMISS, F_MISS<0.02) %>% dim()/dim(LMISS)
 ```
 
 
 # Minor Allele Frequency
 ```{bash plinkMAF}
-cd /Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054
-~/bin/plink --bfile FB_new_with_sex --freq --out FB_new_with_sex_freq
+cd ../Genotyping
+~/bin/plink --bfile Merged/FB_all_1kg3 --freq --out Merged/FB_all_1kg_maf > /dev/null 2>&1
 ```
+
 ```{r MAF}
-FREQ = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/FB_new_with_sex_freq.frq", h=T, as.is=T)
+FREQ = read.table("../Genotyping/Merged/FB_all_1kg_maf.frq", h=T, as.is=T)
 
-ggplot(FREQ, aes(x=MAF)) + geom_freqpoly(bins=44)
-
+ggplot(FREQ, aes(x=MAF)) + 
+  geom_freqpoly() +
+  main_theme() +
+  theme(legend.position=c(.9,.8)) +
+  scale_colour_brewer(type = "qual", palette = 6)
 ```
 
 # Heterozygosity
 
-- 6 samples have low F and high H (suggests possible sample contamination?)
 ```{bash plink_heterozygosity}
-cd /Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054
-~/bin/plink --bfile FB_new_with_sex --het --out FB_new_with_sex_het
+cd ../Genotyping
+~/bin/plink --bfile Merged/FB_all_1kg3 --het --out Merged/FB_all_1kg_het > /dev/null 2>&1
 ```
+
+- A225 clearly has issues. This was also one of the samples that had intermediate sex
+
 ```{r Heterozygosity}
-HET = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/FB_new_with_sex_het.het", h=T, as.is=T)
-HET <- HET %>% mutate(H=(N.NM. - O.HOM.) / N.NM.)
+HET = read.table("../Genotyping/Merged/FB_all_1kg_het.het", h=T, as.is=T)
+HET <- HET %>% mutate(H=(N.NM. - O.HOM.) / N.NM.) %>% full_join(all_sample_info, by='IID')
 ggplot(HET, aes(x=H)) +
   geom_histogram() +
-  geom_text(aes(label=IID), y=2, data=filter(HET, H>0.322), angle=-45, vjust=0, hjust=1)
+  geom_text(aes(label=Sample), y=2, data=filter(HET, H>0.4), angle=-45, vjust=0, hjust=1) +
+  main_theme() +
+  theme(legend.position=c(.9,.8)) +
+  scale_colour_brewer(type = "qual", palette = 6)+
+  facet_grid(VCF ~ .)
+
 
 ggplot(HET, aes(x=F)) + 
   geom_histogram() +
-  geom_text(aes(label=IID), y=2, data=filter(HET, F< -0.01), angle=45, vjust=0, hjust=0)
+  geom_text(aes(label=Sample), y=2, data=filter(HET, F< -0.3), angle=45, vjust=0, hjust=0) +
+  main_theme() +
+  theme(legend.position=c(.9,.8)) +
+  scale_colour_brewer(type = "qual", palette = 6) +
+  facet_grid(VCF ~ .)
 
-filter(HET, F< -.01) %>% left_join(all_sample_info)
 ```
 
 # Hardy-Weinberg Equilibrium
 - very few loci violating HWE. This might be down to small sample size
 
-```{bash plink_hwe}
-cd /Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054
-~/bin/plink --bfile FB_new_with_sex --hardy  --out FB_new_with_sex_hwe
-```
+- When the 1kg data are included, over half of loci violate HWE. This probably isn't too surprising given population stratification
 
+```{bash plink_hwe}
+cd ../Genotyping/
+~/bin/plink --bfile Merged/FB_all_1kg3 --hardy --out Merged/FB_all_1kg_hwe  > /dev/null 2>&1
+```
+- 6.6% of loci fail Hardy-Weinberg with an FDR<0.1
 ```{r HWE}
-HWE = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/FB_new_with_sex_hwe.hwe", h=T, as.is=T)
+HWE = read.table("../Genotyping/Merged/FB_all_1kg_hwe.hwe", h=T, as.is=T)
 ggplot(HWE, aes(x=log10(P))) + 
-  geom_histogram() 
-filter(HWE, P<0.1) %>%
-  ggplot(aes(x=log10(P)))+geom_histogram()
+  geom_histogram() +
+  main_theme() +
+  theme(legend.position=c(.9,.8)) +
+  scale_colour_brewer(type = "qual", palette = 6)
+
+HWE$padj <- p.adjust(HWE$P, method='BH')
+filter(HWE, padj<.1) %>% dim()/dim(HWE)
 ```
 
 # PCA
 
 ```{bash plinkPCA}
-cd /Users/heo3/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054
-~/bin/plink --bfile FB_new_with_sex --pca  --out FB_new_with_sex_pca
+cd ../Genotyping
+
+~/bin/plink --bfile Merged/FB_all_1kg3 --indep-pairwise 250 5 0.2 --out Merged/FB_all_1kg_indep > /dev/null 2>&1
+
+~/bin/plink --bfile Merged/FB_all_1kg3 --pca --extract Merged/FB_all_1kg_indep.prune.in --out Merged/FB_all_1kg_pca > /dev/null 2>&1
 ```
 
+- 18655 also looks like it belongs to a different population
 ``` {r PCA}
-PCA = read.table("~/BTSync/FetalRNAseq/Genome-wide\ genotyping/PLINK_040517_1054/FB_new_with_sex_pca.eigenvec", h=F, as.is=T)
+PCA = read.table("../Genotyping/Merged/FB_all_1kg_pca.eigenvec", h=F, as.is=T) 
 
-ggplot(PCA, aes(x=V3, y=V4))+geom_point()+xlab('PCA1')+ylab('PCA2')
+PCA <- full_join(all_sample_info, PCA, by=c('IID' = 'V2'))
+
+ggplot(filter(PCA, is.na(VCF)), aes(x=V3, y=V4, colour=SuperPop)) +
+  geom_point(alpha=.2) +
+  geom_point(colour='black', size=.5, data=filter(PCA, !is.na(VCF))) +
+  geom_text(aes(label=Sample, x=V3+.001), colour='black', hjust=0, data=filter(PCA, Sample=='A225')) +
+  xlab('PCA1') +
+  ylab('PCA2') +
+  main_theme() +
+  theme(legend.position=c(.9,.8)) +
+  scale_colour_brewer(type = "qual", palette = 6) +
+  guides(colour = guide_legend(override.aes = list(alpha = 1)))
+
+
+filter(PCA, SuperPop=='EUR') %>% ggplot(aes(x=V3, y=V4, colour=POP)) +
+  geom_point(alpha=.2) +
+  geom_point(colour='black', size=.5, data=filter(PCA, !is.na(VCF))) +
+  geom_text(aes(label=Sample, x=V3+.001), colour='black', hjust=0, data=filter(PCA, Sample=='A225')) +
+  xlab('PCA1') +
+  ylab('PCA2') +
+  main_theme() +
+  theme(legend.position=c(.9,.8)) +
+  scale_colour_brewer(type = "qual", palette = 6) +
+  guides(colour = guide_legend(override.aes = list(alpha = 1))) +
+  scale_x_continuous(limits=c(-.01, -0.0075)) +
+  scale_y_continuous(limits=c(0.015,.03))
+```
+
+```{bash}
+cd ../Genotyping
+echo FB_merged48 > Merged/exclude_A225.txt
+~/bin/plink --bfile Merged/FB_all_1kg3 --remove-fam Merged/exclude_A225.txt --make-bed --out Merged/FB_new_1kg_exclA225 > /dev/null 2>&1
+
 ```
