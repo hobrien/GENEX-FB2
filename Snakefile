@@ -2,8 +2,7 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        expand("Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz", run=config["runs"], chr_num=range(21,23)) # change this to range(1,23) to run on all samples
-        
+        expand("Genotypes/MergedImputations/chr{chr_num}.dose.renamed.merged.vcf.gz", chr_num=range(21,23)) # change this to range(1,23) to run on all samples
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -36,4 +35,25 @@ rule rename_samples:
         p = Popen(['bcftools', 'reheader', '-h', '/dev/stdin', '-o', output[0], input['vcf']], stdin=PIPE, stdout=PIPE, stderr=PIPE)
         p.communicate(input=new_header)
 
+rule index_vcf:
+    input:
+         "Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz"
+    output:
+        "Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz.csi"
+    shell:
+        "bcftools index {input}"
+
+rule merge_vcf:
+   """This is a bit fragile because it will break if there are more (or less) than 2 runs in the config files
+      I'm also not 100% sure that the vcf files will always be the first and third argument
+      I don't know of a better way to require the index files to be present tho"""
+   input:
+       files=lambda wildcards: expand("Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz", chr_num=wildcards.chr_num, run=config["runs"]),
+       index=lambda wildcards: expand("Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz.csi", chr_num=wildcards.chr_num, run=config["runs"])
+   output:
+       "Genotypes/MergedImputations/chr{chr_num}.dose.renamed.merged.vcf.gz"
+   log:
+       "Logs/Merge/chr{chr_num}_merge.txt"
+   shell:
+       "(bcftools merge -o {output} {input.files}) 2> {log}"
 
