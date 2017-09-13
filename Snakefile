@@ -78,4 +78,3 @@ rule lift_over:
         "Logs/Liftover/chr{chr_num}_liftover.txt"
     shell:
         "(CrossMap.py vcf {input.chain_file} {input.vcf} {input.genome} {output}) 2> {log}"
-
