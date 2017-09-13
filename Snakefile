@@ -2,7 +2,7 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        expand("Genotypes/MergedImputations/chr{chr_num}.dose.renamed.merged.vcf.gz", chr_num=range(21,23)) # change this to range(1,23) to run on all samples
+        expand("Genotypes/GRCh38/chr{chr_num}.dose.renamed.merged.hg38.vcf", chr_num=range(21,23)) # change this to range(1,23) to run on all samples
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -10,7 +10,7 @@ rule rename_samples:
         ##FILTER=<ID=GENOTYPED,Description="Site was genotyped">
         ##FILTER=<ID=GENOTYPED_ONLY,Description="Site was genotyped only">"""
     input:
-        sample_info="Data/SampleInfo.txt",
+        sample_info=config["reference"]["sample_info"],
         vcf="Genotypes/{run}/hg19/chr{chr_num}.dose.vcf.gz"
     output:
         "Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz"
@@ -44,9 +44,6 @@ rule index_vcf:
         "bcftools index {input}"
 
 rule merge_vcf:
-   """This is a bit fragile because it will break if there are more (or less) than 2 runs in the config files
-      I'm also not 100% sure that the vcf files will always be the first and third argument
-      I don't know of a better way to require the index files to be present tho"""
    input:
        files=lambda wildcards: expand("Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz", chr_num=wildcards.chr_num, run=config["runs"]),
        index=lambda wildcards: expand("Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz.csi", chr_num=wildcards.chr_num, run=config["runs"])
@@ -55,5 +52,17 @@ rule merge_vcf:
    log:
        "Logs/Merge/chr{chr_num}_merge.txt"
    shell:
-       "(bcftools merge -o {output} {input.files}) 2> {log}"
+       "(bcftools merge -Oz -o {output} {input.files}) 2> {log}"
+       
+rule lift_over:
+    input:
+        vcf="Genotypes/MergedImputations/chr{chr_num}.dose.renamed.merged.vcf.gz",
+        chain_file=config["reference"]["chain_file"],
+        genome=config["reference"]["genome"]
+    output:
+        "Genotypes/GRCh38/chr{chr_num}.dose.renamed.merged.hg38.vcf"
+    log:
+        "Logs/Liftover/chr{chr_num}_liftover.txt"
+    shell:
+        "(CrossMap.py vcf {input.chain_file} {input.vcf} {input.genome} {output}) 2> {log}"
 
