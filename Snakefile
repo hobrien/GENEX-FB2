@@ -2,7 +2,7 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        expand("Genotypes/GRCh38/chr{chr_num}.dose.renamed.merged.hg38.vcf", chr_num=range(21,23)) # change this to range(1,23) to run on all samples
+        expand("Genotypes/GRCh38/chr{chr_num}.dose.renamed.merged.annotated.hg38.vcf", chr_num=range(21,23)) # change this to range(1,23) to run on all samples
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -35,13 +35,6 @@ rule rename_samples:
         p = Popen(['bcftools', 'reheader', '-h', '/dev/stdin', '-o', output[0], input['vcf']], stdin=PIPE, stdout=PIPE, stderr=PIPE)
         p.communicate(input=new_header)
 
-rule index_vcf:
-    input:
-         "Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz"
-    output:
-        "Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz.csi"
-    shell:
-        "bcftools index {input}"
 
 rule merge_vcf:
    input:
@@ -54,13 +47,33 @@ rule merge_vcf:
    shell:
        "(bcftools merge -Oz -o {output} {input.files}) 2> {log}"
        
-rule lift_over:
+rule index_vcf2:
+    input:
+         "Genotypes/MergedImputations/chr{chr_num}.dose.renamed.merged.vcf.gz",
+    output:
+        "Genotypes/MergedImputations/chr{chr_num}.dose.renamed.merged.vcf.gz.csi"
+    shell:
+        "bcftools index {input}"
+
+rule add_rsID:
     input:
         vcf="Genotypes/MergedImputations/chr{chr_num}.dose.renamed.merged.vcf.gz",
+        index="Genotypes/MergedImputations/chr{chr_num}.dose.renamed.merged.vcf.gz.csi",
+        rsID=config["reference"]["rsID"]
+    output:
+        "Genotypes/Annotated/chr{chr_num}.dose.renamed.merged.annotated.vcf.gz"
+    log:
+        "Logs/Annotate/chr{chr_num}_annotate.txt"
+    shell:
+        "(bcftools annotate -c ID -Oz -a {input.rsID} -o {output} {input.vcf}) 2> {log}"
+
+rule lift_over:
+    input:
+        vcf="Genotypes/Annotated/chr{chr_num}.dose.renamed.merged.annotated.vcf.gz",
         chain_file=config["reference"]["chain_file"],
         genome=config["reference"]["genome"]
     output:
-        "Genotypes/GRCh38/chr{chr_num}.dose.renamed.merged.hg38.vcf"
+        "Genotypes/GRCh38/chr{chr_num}.dose.renamed.merged.annotated.hg38.vcf"
     log:
         "Logs/Liftover/chr{chr_num}_liftover.txt"
     shell:

@@ -5,3 +5,4 @@ reference:
     chain_file: /c8000xd3/rnaseq-heath/Ref/Homo_sapiens/GRCh38/hg19ToHg38.over.chain
     genome: /c8000xd3/rnaseq-heath/Ref/Homo_sapiens/GRCh38/NCBI/GRCh38Alt/genome.fa
     sample_info: Data/SampleInfo.txt
+    rsID: /c8000xd3/rnaseq-heath/Ref/Homo_sapiens/hg19/All_20161121.vcf.gz
