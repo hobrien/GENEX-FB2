@@ -21,7 +21,7 @@ rule rename_samples:
         sample_info = dict((rows[2].encode('ascii'),rows[0].encode('ascii')) for rows in reader)
         p = Popen(['bcftools', 'view', '-h', input['vcf']], stdout=PIPE, stderr=PIPE)
         old_header, err = p.communicate()
-        old_header = old_header.replace(b"##contig=<ID=", b"##contig=<ID=chr")
+        #old_header = old_header.replace(b"##contig=<ID=", b"##contig=<ID=chr")
         header_lines = old_header.splitlines()
         sample_names = header_lines[-1].split(b'\t')
         for i in range(9,len(sample_names)):
