@@ -1,5 +1,10 @@
 configfile: "config.yaml"
 
+""- this script currently adds sample names to vcf files, merges them, lifts them over to
+GRCh38, coordinate-sorts the output, and removes non-ref bases and duplicated sites (non-binary SNPs)
+- previously I filtered SNPs with alt allele probabilities < 0.9
+- there's also a bunch of stuff like removing SNPs with low MAF and testing for HWE that would probably be useful
+"""
 rule all:
     input:
         expand("Genotypes/FilterDup/chr{chr_num}.dose.renamed.merged.annotated.hg38.sorted.filter_dup.vcf.gz", chr_num=range(21,23)) # change this to range(1,23) to run on all samples
@@ -84,9 +89,21 @@ rule lift_over:
     shell:
         "(CrossMap.py vcf {input.chain_file} {input.vcf} {input.genome} {output}) 2> {log}"
 
-rule sort_vcf:
+rule filter_chr:
     input:
         "Genotypes/GRCh38/chr{chr_num}.dose.renamed.merged.annotated.hg38.vcf"
+    output:
+        "Genotypes/FilterChr/chr{chr_num}.dose.renamed.merged.annotated.hg38.filter_chr.vcf.gz"
+    log:
+        "Logs/FilterChr/chr{chr_num}_filter_chr.txt"
+    params:
+        chr =  "'^{chr_num}\b'"
+    shell:
+        "(grep -e '^#' -e {params.chr} {input} | bcftools view -Oz -o {output}) 2> {log}"
+
+rule sort_vcf:
+    input:
+        "Genotypes/FilterChr/chr{chr_num}.dose.renamed.merged.annotated.hg38.filter_chr.vcf.gz"
     output:
         "Genotypes/Sort/chr{chr_num}.dose.renamed.merged.annotated.hg38.sorted.vcf.gz"
     log:
@@ -117,9 +134,8 @@ rule filter_dup:
     log:
         "Logs/FilterDup/chr{chr_num}_filter_dup.txt"
     run:
-        from subprocess import Popen, PIPE
+        from subprocess import call
         import pandas as pd
-        #input={'nonSnp': 'Genotypes/Imputation3/GRCh38_2/chr22.dose.rename.filter_samples.filter_sites.rsID.recoded.GRCh38.sort.vcf.check.nonSnp', 'dup': 'Genotypes/Imputation3/GRCh38_2/chr22.dose.rename.filter_samples.filter_sites.rsID.recoded.GRCh38.sort.vcf.check.dup'}
         try:
             nonSnp = pd.read_csv(input['nonSnp'], header=None, sep='\t')
         except pd.io.common.EmptyDataError:
