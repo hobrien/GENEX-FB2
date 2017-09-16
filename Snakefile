@@ -1,13 +1,12 @@
 configfile: "config.yaml"
 
-""- this script currently adds sample names to vcf files, merges them, lifts them over to
-GRCh38, coordinate-sorts the output, and removes non-ref bases and duplicated sites (non-binary SNPs)
-- previously I filtered SNPs with alt allele probabilities < 0.9
-- there's also a bunch of stuff like removing SNPs with low MAF and testing for HWE that would probably be useful
-"""
+# this script currently adds sample names to vcf files, merges them, lifts them over to GRCh38, coordinate-sorts the output, and removes non-ref bases and duplicated sites (non-binary SNPs)
+# previously I filtered SNPs with alt allele probabilities < 0.9
+# there's also a bunch of stuff like removing SNPs with low MAF and testing for HWE that would probably be useful
+
 rule all:
     input:
-        expand("Genotypes/FilterDup/chr{chr_num}.dose.renamed.merged.annotated.hg38.sorted.filter_dup.vcf.gz", chr_num=range(21,23)) # change this to range(1,23) to run on all samples
+        expand("Genotypes/FilterProb/chr{chr_num}.filter_prob.bcf", chr_num=range(21,23)) # change this to range(1,23) to run on all samples
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -51,27 +50,27 @@ rule merge_vcf:
        files=lambda wildcards: expand("Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz", chr_num=wildcards.chr_num, run=config["runs"]),
        index=lambda wildcards: expand("Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz.csi", chr_num=wildcards.chr_num, run=config["runs"])
    output:
-       "Genotypes/MergedImputations/chr{chr_num}.dose.renamed.merged.vcf.gz"
+       "Genotypes/MergedImputations/chr{chr_num}.merged.bcf"
    log:
        "Logs/Merge/chr{chr_num}_merge.txt"
    shell:
-       "(bcftools merge -Oz -o {output} {input.files}) 2> {log}"
+       "(bcftools merge -Ov {input.files} | bcftools filter -e 'GT =\".\"' -Ob -o {output} ) 2> {log}"
        
 rule index_vcf2:
     input:
-         "Genotypes/MergedImputations/chr{chr_num}.dose.renamed.merged.vcf.gz"
+         "Genotypes/MergedImputations/chr{chr_num}.merged.bcf"
     output:
-        "Genotypes/MergedImputations/chr{chr_num}.dose.renamed.merged.vcf.gz.csi"
+        "Genotypes/MergedImputations/chr{chr_num}.merged.bcf.csi"
     shell:
         "bcftools index {input}"
 
 rule add_rsID:
     input:
-        vcf="Genotypes/MergedImputations/chr{chr_num}.dose.renamed.merged.vcf.gz",
-        index="Genotypes/MergedImputations/chr{chr_num}.dose.renamed.merged.vcf.gz.csi",
+        vcf="Genotypes/MergedImputations/chr{chr_num}.merged.bcf",
+        index="Genotypes/MergedImputations/chr{chr_num}.merged.bcf.csi",
         rsID=config["reference"]["rsID"]
     output:
-        "Genotypes/Annotated/chr{chr_num}.dose.renamed.merged.annotated.vcf.gz"
+        "Genotypes/Annotated/chr{chr_num}.annotated.vcf.gz" 
     log:
         "Logs/Annotate/chr{chr_num}_annotate.txt"
     shell:
@@ -79,11 +78,11 @@ rule add_rsID:
 
 rule lift_over:
     input:
-        vcf="Genotypes/Annotated/chr{chr_num}.dose.renamed.merged.annotated.vcf.gz",
+        vcf="Genotypes/Annotated/chr{chr_num}.annotated.vcf.gz", # CrossMap appears to require a vcf file, not bcf
         chain_file=config["reference"]["chain_file"],
         genome=config["reference"]["genome"]
     output:
-        "Genotypes/GRCh38/chr{chr_num}.dose.renamed.merged.annotated.hg38.vcf"
+        "Genotypes/GRCh38/chr{chr_num}.hg38.vcf"
     log:
         "Logs/Liftover/chr{chr_num}_liftover.txt"
     shell:
@@ -91,21 +90,21 @@ rule lift_over:
 
 rule filter_chr:
     input:
-        "Genotypes/GRCh38/chr{chr_num}.dose.renamed.merged.annotated.hg38.vcf"
+        "Genotypes/GRCh38/chr{chr_num}.hg38.vcf"
     output:
-        "Genotypes/FilterChr/chr{chr_num}.dose.renamed.merged.annotated.hg38.filter_chr.vcf.gz"
+        "Genotypes/FilterChr/chr{chr_num}.filter_chr.vcf.gz" 
     log:
         "Logs/FilterChr/chr{chr_num}_filter_chr.txt"
     params:
-        chr =  "'^{chr_num}\b'"
+        chr =  "'^{chr_num}\\b'"
     shell:
         "(grep -e '^#' -e {params.chr} {input} | bcftools view -Oz -o {output}) 2> {log}"
 
 rule sort_vcf:
     input:
-        "Genotypes/FilterChr/chr{chr_num}.dose.renamed.merged.annotated.hg38.filter_chr.vcf.gz"
+        "Genotypes/FilterChr/chr{chr_num}.filter_chr.vcf.gz" # this is another tool that can't handle bcf
     output:
-        "Genotypes/Sort/chr{chr_num}.dose.renamed.merged.annotated.hg38.sorted.vcf.gz"
+        "Genotypes/Sort/chr{chr_num}.sorted.vcf.gz"
     log:
         "Logs/Sort/chr{chr_num}_sort.txt"
     shell:
@@ -113,12 +112,13 @@ rule sort_vcf:
         
 rule vcf_check:
     input:
-        vcf="Genotypes/Sort/chr{chr_num}.dose.renamed.merged.annotated.hg38.sorted.vcf.gz",
+        vcf="Genotypes/Sort/chr{chr_num}.sorted.vcf.gz", # this is another tool that can't handle bcf
         genome=config["reference"]["genome"]
     output:
-        "Genotypes/Sort/chr{chr_num}.dose.renamed.merged.annotated.hg38.sorted.check.log"
+        "Genotypes/Sort/chr{chr_num}.sorted.check.nonSnp",
+        "Genotypes/Sort/chr{chr_num}.sorted.check.dup"
     params:
-        prefix = "Genotypes/Sort/chr{chr_num}.dose.renamed.merged.annotated.hg38.sorted"    
+        prefix = "Genotypes/Sort/chr{chr_num}.sorted"    
     log:
         "Logs/CheckVCF/chr{chr_num}_vcf_check.txt"
     shell:
@@ -126,11 +126,11 @@ rule vcf_check:
 
 rule filter_dup:
     input:
-        vcf="Genotypes/Sort/chr{chr_num}.dose.renamed.merged.annotated.hg38.sorted.vcf.gz",
-        nonSnp="Genotypes/Sort/chr{chr_num}.dose.renamed.merged.annotated.hg38.sorted.check.nonSnp",
-        dup="Genotypes/Sort/chr{chr_num}.dose.renamed.merged.annotated.hg38.sorted.check.dup"
+        vcf="Genotypes/FilterChr/chr{chr_num}.filter_chr.vcf.gz",
+        nonSnp="Genotypes/Sort/chr{chr_num}.sorted.check.nonSnp",
+        dup="Genotypes/Sort/chr{chr_num}.sorted.check.dup"
     output:
-        "Genotypes/FilterDup/chr{chr_num}.dose.renamed.merged.annotated.hg38.sorted.filter_dup.vcf.gz"
+        "Genotypes/FilterDup/chr{chr_num}.filter_dup.bcf"
     log:
         "Logs/FilterDup/chr{chr_num}_filter_dup.txt"
     run:
@@ -148,10 +148,28 @@ rule filter_dup:
             excluded_sites = '|'.join('POS=' + snp for snp in set(nonSnp[1].tolist()))
         with open(log[0], 'w') as log_file:
             if len(excluded_sites) > 0:
-                log_file.write("filtering {} non-SNP sites and {} duplicate sites from {}".format(len(nonSnp), len(dup_site), input['vcf']))
-                call(['bcftools', 'filter', '-Oz', '-e', excluded_sites, '-o', output[0], input['vcf']])
+                log_file.write("filtering {} non-SNP sites and {} duplicate sites from {}\n".format(len(nonSnp), len(dup_site), input['vcf']))
+                call(['bcftools', 'filter', '-Ob', '-e', excluded_sites, '-o', output[0], input['vcf']])
             else:
-                log_file.write("No non SNP sites or duplicated sites in {}".format(input['vcf']))
+                log_file.write("No non SNP sites or duplicated sites in {}\n".format(input['vcf']))
                 from shutil import copyfile
-                copyfile(input['vcf'], output[0])
+                call(['bcftools', 'view', '-Ob', '-o', output[0], input['vcf']])
+
+rule filter_prob:
+    input:
+        "Genotypes/FilterDup/chr{chr_num}.filter_dup.bcf"
+    output:
+        "Genotypes/FilterProb/chr{chr_num}.filter_prob.bcf"
+    run:
+        from pysam import VariantFile
+        bcf_in = VariantFile(input[0])  # auto-detect input format
+        bcf_out = VariantFile(output[0], 'wb', header=bcf_in.header)
+        for site in bcf_in.fetch():
+            keep_site = 0 # default option is to remove SNP
+            for sample, rec in site.samples.items():
+                if max(rec.get('GP')[1:]) > 0.9:
+                    keep_site = 1 # do not remove SNP if either het or non-ref homo is greater than .9 for any sample
+            if keep_site:
+                bcf_out.write(site)
+
 
