@@ -124,36 +124,25 @@ rule vcf_check:
     shell:
          "(Python/checkVCF.py -r {input.genome} -o {params.prefix} {input.vcf}) 2> {log}"
 
+rule excluded_sites:
+    input:
+        nonSnp="Genotypes/Sort/chr{chr_num}.sorted.check.nonSnp",
+        dup="Genotypes/Sort/chr{chr_num}.sorted.check.dup"
+    output:
+        "Genotypes/FilterDup/chr{chr_num}.excluded_sites.txt",
+    shell:
+        "cut -f 1,2 {input.nonSnp} > {output}; cut -f 2 {input.dup} | perl -pe 's/:/\t/' >> {output}"
+
 rule filter_dup:
     input:
         vcf="Genotypes/FilterChr/chr{chr_num}.filter_chr.vcf.gz",
-        nonSnp="Genotypes/Sort/chr{chr_num}.sorted.check.nonSnp",
-        dup="Genotypes/Sort/chr{chr_num}.sorted.check.dup"
+        excluded_sites="Genotypes/FilterDup/chr{chr_num}.excluded_sites.txt"
     output:
         "Genotypes/FilterDup/chr{chr_num}.filter_dup.bcf"
     log:
         "Logs/FilterDup/chr{chr_num}_filter_dup.txt"
-    run:
-        from subprocess import call
-        import pandas as pd
-        try:
-            nonSnp = pd.read_csv(input['nonSnp'], header=None, sep='\t')
-        except pd.io.common.EmptyDataError:
-            nonSnp = pd.DataFrame(pd.np.empty((0, 2)))
-        try:
-            dup_site = pd.read_csv(input['dup'], header=None, sep='\t')
-            excluded_sites = '|'.join('POS='+snp for snp in set(dup_site[1].str.split(':', expand=True)[1].tolist() + nonSnp[1].tolist()))
-        except pd.io.common.EmptyDataError:
-            dup_site = pd.DataFrame(pd.np.empty((0, 2)))
-            excluded_sites = '|'.join('POS=' + snp for snp in set(nonSnp[1].tolist()))
-        with open(log[0], 'w') as log_file:
-            if len(excluded_sites) > 0:
-                log_file.write("filtering {} non-SNP sites and {} duplicate sites from {}\n".format(len(nonSnp), len(dup_site), input['vcf']))
-                call(['bcftools', 'filter', '-Ob', '-e', excluded_sites, '-o', output[0], input['vcf']])
-            else:
-                log_file.write("No non SNP sites or duplicated sites in {}\n".format(input['vcf']))
-                from shutil import copyfile
-                call(['bcftools', 'view', '-Ob', '-o', output[0], input['vcf']])
+    shell:
+        "(if [ -s {input.excluded_sites} ] ; then bcftools filter -T ^{input.excluded_sites} -Ob -o {output} {input.vcf} ; else bcftools view -Ob -o {output} {input.vcf} ; fi) 2> {log}"
 
 rule filter_prob:
     input:
