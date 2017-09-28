@@ -6,7 +6,7 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        expand("Genotypes/FilterProb/chr{chr_num}.filter_prob.bcf", chr_num=range(21,23)) # change this to range(1,23) to run on all samples
+        expand("Genotypes/FilterProb/chr{chr_num}.filter_prob.bcf", chr_num=range(1,23)) # change this to range(1,23) to run on all samples
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -18,6 +18,8 @@ rule rename_samples:
         vcf="Genotypes/{run}/hg19/chr{chr_num}.dose.vcf.gz"
     output:
         "Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz"
+    log:
+        "Logs/Rename/chr{chr_num}{run}_rename.txt"
     run:
         from subprocess import Popen, PIPE
         import csv
@@ -34,8 +36,11 @@ rule rename_samples:
         extra_lines = [b'##FILTER=<ID=GENOTYPED,Description="Site was genotyped">',
                        b'##FILTER=<ID=GENOTYPED_ONLY,Description="Site was genotyped only">']
         new_header = b'\n'.join(header_lines[:1] + extra_lines + header_lines[1:-1]+[b'\t'.join(sample_names)])
-        p = Popen(['bcftools', 'reheader', '-Oz', '-h', '/dev/stdin', '-o', output[0], input['vcf']], stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        p.communicate(input=new_header)
+        p = Popen(['bcftools', 'reheader', '-h', '/dev/stdin', '-o', output[0], input['vcf']], stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        (out, err) = p.communicate(input=new_header)
+        with open(log[0], 'wb') as log:
+            log.write(out)
+            log.write(err)
 
 rule index_vcf:
     input:
