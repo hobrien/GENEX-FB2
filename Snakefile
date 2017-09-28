@@ -6,7 +6,8 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        "Genotypes/Combined/combined.bcf"
+        "Genotypes/Plink/genotypes.map",
+        "MatrixEQTL/genotypes.txt"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -175,3 +176,33 @@ rule combine_chromosomes:
         "Logs/CombineChromosomes/combined.txt"
     shell:
         "(bcftools concat -Ob -o {output} {input}) 2> {log}"
+
+rule plink_filter:
+    input:
+        "Genotypes/Combined/combined.bcf"
+    output:
+        "Genotypes/Plink/genotypes.map",
+        "Genotypes/Plink/genotypes.log"
+    params:
+        prefix = "genotypes"            
+    shell:
+        "plink --bcf {input} --double-id --maf .05 --hwe .0001 --recode --out {params.prefix}"
+
+rule plink_recode:
+    input:
+        "Genotypes/Combined/combined.bcf"
+    output:
+        "Genotypes/Plink/recoded.raw",
+        "Genotypes/Plink/recoded.log"
+    params:
+        prefix = "recoded"            
+    shell:
+        "plink --bcf {input} --double-id --maf .05 --hwe .0001 --recode A tab --out {params.prefix}"
+
+rule transpose:
+    input:
+        "Genotypes/Plink/recoded.raw"
+    output:
+        "MatrixEQTL/genotypes.txt"
+    shell:
+        "transpose -t -l 1000x100000000 {input} | egrep -v "^(FID)|(PAT)|(MAT)|(PHENOTYPE)|(SEX)" > {output}"
