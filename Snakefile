@@ -6,7 +6,7 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        expand("Genotypes/FilterProb/chr{chr_num}.filter_prob.bcf", chr_num=range(1,23)) # change this to range(1,23) to run on all samples
+        "Genotypes/Combined/combined.bcf"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -166,4 +166,12 @@ rule filter_prob:
             if keep_site:
                 bcf_out.write(site)
 
-
+rule combine_chromosomes:
+    input:
+        expand("Genotypes/FilterProb/chr{chr_num}.filter_prob.bcf", chr_num=range(1,23)) # change this to range(1,23) to run on all samples
+    output:
+        "Genotypes/Combined/combined.bcf"
+    log:
+        "Logs/CombineChromosomes/combined.txt"
+    shell:
+        "(bcftools concat -Ob -o {output} {input}) 2> {log}"
