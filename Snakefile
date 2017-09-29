@@ -53,15 +53,17 @@ rule index_vcf:
 
 rule merge_vcf:
    input:
-       files=lambda wildcards: expand("Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz", chr_num=wildcards.chr_num, run=config["runs"]),
-       index=lambda wildcards: expand("Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz.csi", chr_num=wildcards.chr_num, run=config["runs"])
+       file1="Genotypes/Imputation3/Renamed/chr{chr_num}.dose.renamed.vcf.gz", 
+       file2="Genotypes/Imputation4/Renamed/chr{chr_num}.dose.renamed.vcf.gz",
+       index1="Genotypes/Imputation3/Renamed/chr{chr_num}.dose.renamed.vcf.gz.csi", 
+       index2="Genotypes/Imputation4/Renamed/chr{chr_num}.dose.renamed.vcf.gz.csi"
    output:
        "Genotypes/MergedImputations/chr{chr_num}.merged.bcf"
    log:
        "Logs/Merge/chr{chr_num}_merge.txt"
    shell:
-       "(bcftools merge -Ov {input.files} | bcftools filter -e 'GT =\".\"' -Ob -o {output} ) 2> {log}"
-       
+       "(bcftools merge -Ov {input.file1} {input.file2} | bcftools filter -e 'GT =\".\"' -Ob -o {output} ) 2> {log}"
+
 rule index_vcf2:
     input:
          "Genotypes/MergedImputations/chr{chr_num}.merged.bcf"
