@@ -36,23 +36,12 @@ target$id=rownames(target)
 target <- target[ , order(names(target))]
 target <- dplyr::select(target, id, everything())
 
-# convert vcf file to table of genotypes and list of SNP locations
-#individual_vcf_files = "/Volumes/FetalRNAseq/Processed/chr*.dose.rename.filter_samples.filter_sites.rsID.recoded.GRCh38.sort.vcf.gz"
-#vcf_file_name = "/Volumes/FetalRNAseq/Processed/chr_all.dose.rename.filter_samples.filter_sites.rsID.recoded.GRCh38.sort.vcf.gz"
-#python_script_name = "~/BTsync/FetalRNAseq/LabNotes/Python/VCF2numeric.py"
-snps_location_file_name = "../MatrixEQTL/snp_pos.txt"
-snps_file_name = "../MatrixEQTL/genotypes.txt"
 alt_threshold = 10
-# use file tests to avoid re-doing unnecessary shell commands, which are pretty time consuming
-#if (! file_test("-f", vcf_file_name)) {
-#  system(paste('bcftools concat', individual_vcf_files, '>', vcf_file_name))
-#}
 
-#if (! file_test("-f", snps_location_file_name) | ! file_test("-f", snps_file_name)) {
-#  system(paste('bcftools view', vcf_file_name, '| python', python_script_name, snps_file_name, snps_location_file_name, alt_threshold))
-#}
-
-snp_tbl<- read_delim(snps_file_name, delim='\t')
+snp_tbl<- read_delim("../MatrixEQTL/recoded.raw", delim='\t')
+snp_tbl <- snp_tbl %>% dplyr::select(-FID, -PAT, -MAT, -PHENOTYPE, -SEX) %>%
+  as.matrix() %>% t() %>% as.data.frame() %>%
+  mutate(IID = str_replace(IID, '_\w', ''))
 #snp_tbl <- dplyr::rename(snp_tbl,  `18208` = `18121`)
 snp_tbl <- snp_tbl[ , order(names(snp_tbl))]
 snp_tbl <- rename(snp_tbl, id=IID)
@@ -89,10 +78,7 @@ if(length(covariates_file_name)>0) {
   cvrt$LoadFile(covariates_file_name);
 }
 
-geneotype_file_name = "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/genotypes_formatted.txt"
-if (! file_test("-f", geneotype_file_name)) {
-  write_tsv(snp_tbl, geneotype_file_name)
-}
+write_tsv(snp_tbl, "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/genotypes_formatted.txt")
 
 snps = SlicedData$new();
 snps$fileDelimiter = "\t";      # the TAB character
@@ -109,8 +95,10 @@ snps$LoadFile( geneotype_file_name );
 #system(paste("cat ~/BTSync/FetalRNAseq/Ref/genes.gtf | awk '{if ($3 == \"gene\") print $10, $1, $4, $5}' | sed 's/[\";]//g' >>", gene_location_file_name))
 #gene_location_file_name = "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/geneloc.txt"
 
-snpspos = read_tsv(snps_location_file_name, col_names = c("snp",	"chr",	"pos"));
-
+snpspos <- read_tsv("../MatrixEQTL/genotypes.map", col_names = c("chr", "snp",	"skip",	"pos"));
+snpspos <- snpspos %>% dplyr::select(snp, chr, pos) %>%
+  mutate(chr = paste0("chr", chr)) %>%
+  as.data.frame()
 
 
 ###############################################################
