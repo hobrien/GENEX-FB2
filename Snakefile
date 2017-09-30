@@ -6,8 +6,9 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        "Genotypes/Plink/genotypes.map",
-        "MatrixEQTL/genotypes.txt"
+        cis="MatrixEQTL/cis_eqtl.txt",
+        trans="MatrixEQTL/trans_eqtl.txt",
+        image="MatrixEQTL/results.RData"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -186,7 +187,7 @@ rule plink_filter:
         "Genotypes/Plink/genotypes.map",
         "Genotypes/Plink/genotypes.log"
     params:
-        prefix = "genotypes"            
+        prefix = "Genotypes/Plink/genotypes"            
     shell:
         "plink --bcf {input} --double-id --maf .05 --hwe .0001 --recode --out {params.prefix}"
 
@@ -197,14 +198,33 @@ rule plink_recode:
         "Genotypes/Plink/recoded.raw",
         "Genotypes/Plink/recoded.log"
     params:
-        prefix = "recoded"            
+        prefix = "Genotypes/Plink/recoded"            
     shell:
         "plink --bcf {input} --double-id --maf .05 --hwe .0001 --recode A tab --out {params.prefix}"
 
-rule transpose:
+rule get_gene_positions:
     input:
-        "Genotypes/Plink/recoded.raw"
+        gtf=config["reference"]["gtf"]
     output:
-        "MatrixEQTL/genotypes.txt"
+        "Data/geneloc.txt"
     shell:
-        "transpose -t -l 1000x100000000 {input} | egrep -v "^(FID)|(PAT)|(MAT)|(PHENOTYPE)|(SEX)" > {output}"
+        "cat {input} | awk '{if ($3 == \"gene\") print $10, $1, $4, $5}' | sed 's/[\";]//g' > {output}"
+
+rule matrix_eqtl:
+    input:
+        genotypes="Genotypes/Plink/recoded.raw",
+        snp_pos="Genotypes/Plink/genotypes.map",
+        gene_counts=config["count_data"],
+        gene_loc="Data/geneloc.txt",
+        sample_info=config["reference"]["sample_info"]
+    output:
+        cis="MatrixEQTL/cis_eqtl.txt",
+        trans="MatrixEQTL/trans_eqtl.txt",
+        image="MatrixEQTL/results.RData"
+    params:
+        maxvmem = "40G"
+    shell:
+        "Rscript R/MatrixEQTL.R  --genotypes {input.genotypes} "
+        "--counts {inputs.counts --snps input{snp_pos} --genes {input.gene_loc} "
+        "--cofactors {input.sample_info} --cis {output.cis} "
+        "--trans {output.trans} --image {output.image}"

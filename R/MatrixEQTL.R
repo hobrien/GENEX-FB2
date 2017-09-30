@@ -1,20 +1,41 @@
-setwd("~/BTSync/FetalRNAseq/Github/GENEX-FB2/")
+#setwd("~/BTSync/FetalRNAseq/Github/GENEX-FB2/")
 
 library(MatrixEQTL)
 library(tidyverse)
 library(stringr)
-source(paste0('R/AnalyseDE.R'))
+library("optparse")
+
+option_list <- list(
+  make_option(c("--genotypes"), type="character", 
+              help="Additive genotypes file from PLINK (recodeA)"),
+  make_option(c("--counts"), type="character", 
+              help="Counts file from SARtools"),
+  make_option(c("--snps"), type="character", 
+              help="SNP positions (plink map file)"),
+  make_option(c("--genes"), type="character",  
+              help="Positions of genes (geneID, chr, start, end)"),
+  make_option(c("--cofactors"), type="character", 
+              help="Information about each sample"),
+  make_option(c("--cis"), type="character", 
+              help="table of cis eQTLs"),
+  make_option(c("--trans"), type="character", 
+              help="table of transeQTLs"),
+  make_option(c("--image"), type="character", 
+              help="R image file with all outfiles")
+ )
+opt_parser <- OptionParser(option_list=option_list)
+opt <- parse_args(opt_parser)
+
 
 # Import normalised counts, filter, remove 'norm.', sort
-counts <- read_delim("../Data/MalevsFemale.complete.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>% 
+counts <- read_delim(opt$counts, "\t", escape_double = FALSE, trim_ws = TRUE) %>% 
   filter(! is.na(padj)) %>%
   dplyr::select(Id, starts_with('norm'))
 colnames(counts) <- str_replace(colnames(counts), 'norm\\.', '')
 counts <- counts[ , order(names(counts))]
 counts <- dplyr::select(counts, id=Id, everything())
 
-gene_location_file_name = "../Data/geneloc.txt"
-genepos = read.table(gene_location_file_name, header = TRUE, stringsAsFactors = FALSE);
+genepos = read.table(opt$genes, header = TRUE, stringsAsFactors = FALSE);
 genepos <- genepos %>% mutate(geneid= str_replace(geneid, '(ENSG\\d+)\\.\\d+', '\\1')) %>% rename(id=geneid)
 genepos <- genepos %>% semi_join(counts, by=c("id"))
 
@@ -22,7 +43,7 @@ genepos <- genepos %>% semi_join(counts, by=c("id"))
 # Seems that data are coerced into float/integer column-wiseduring import with 
 # the LoadFile command even though the data are encoded row-wise. I think the 
 # only solution to this is to round every thing to whole numbers.
-target <- read_delim("../Data/SampleInfo.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+target <- read_delim(opt$cofactors, "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   mutate(Sample=as.character(Sample))
 target$Sex<-as.integer(factor(target$Sex))
 target$Batch<-as.integer(factor(target$ReadLength))
@@ -36,9 +57,7 @@ target$id=rownames(target)
 target <- target[ , order(names(target))]
 target <- dplyr::select(target, id, everything())
 
-alt_threshold = 10
-
-snp_tbl<- read_delim("../MatrixEQTL/recoded.raw", delim='\t')
+snp_tbl<- read_delim(opt$genotypes, delim='\t')
 snp_tbl <- snp_tbl %>% dplyr::select(-FID, -PAT, -MAT, -PHENOTYPE, -SEX) %>%
   as.matrix() %>% t() %>% as.data.frame() %>%
   mutate(IID = str_replace(IID, '_\w', ''))
@@ -78,7 +97,8 @@ if(length(covariates_file_name)>0) {
   cvrt$LoadFile(covariates_file_name);
 }
 
-write_tsv(snp_tbl, "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/genotypes_formatted.txt")
+genotypes_file_name = tempfile()
+write_tsv(snp_tbl, genotypes_file_name)
 
 snps = SlicedData$new();
 snps$fileDelimiter = "\t";      # the TAB character
@@ -95,15 +115,15 @@ snps$LoadFile( geneotype_file_name );
 #system(paste("cat ~/BTSync/FetalRNAseq/Ref/genes.gtf | awk '{if ($3 == \"gene\") print $10, $1, $4, $5}' | sed 's/[\";]//g' >>", gene_location_file_name))
 #gene_location_file_name = "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/geneloc.txt"
 
-snpspos <- read_tsv("../MatrixEQTL/genotypes.map", col_names = c("chr", "snp",	"skip",	"pos"));
+snpspos <- read_tsv(opt$snps, col_names = c("chr", "snp",	"skip",	"pos"));
 snpspos <- snpspos %>% dplyr::select(snp, chr, pos) %>%
   mutate(chr = paste0("chr", chr)) %>%
   as.data.frame()
 
 
 ###############################################################
-output_file_name_cis = "../MatrixEQTL/cis_eqtl.txt"
-output_file_name_tra = "../MatrixEQTL/trans_eqtl.txt"
+output_file_name_cis = opt$cis
+output_file_name_tra = opt$trans
 
 pvOutputThreshold_cis = 1e-5;
 pvOutputThreshold_tra = 1e-10;
@@ -135,41 +155,3 @@ me = Matrix_eQTL_main(
 unlink(output_file_name_tra);
 unlink(output_file_name_cis);
 
-write_tsv(me$cis$eqtls, "MatrixEQTL/cis_eqtl.txt")
-write_tsv(me$trans$eqtls, "MatrixEQTL/trans_eqtl.txt")
-write_tsv(filter(me$trans$eqtls, FDR <=.1e-10), "MatrixEQTL/trans_eqtl_e10.txt")
-
-gene_info <- read_tsv("Data/genes.txt") %>%
-  mutate(gene_id = sub("\\.[0-9]+", "", gene_id)) %>%
-  dplyr::select(Id = gene_id, SYMBOL=gene_name, Chr=seqid)
-genotypes <- read_delim("MatrixEQTL/genotypes_formatted.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
-genotypes_filtered <- semi_join(genotypes, cis, by=c("id" = 'snps'))
-
-cis <- me$cis$eqtls %>% 
-   mutate(gene = sub("(ENSG[0-9]+)\\.[0-9]+", '\\1', gene),
-       statistic = as.numeric(format(statistic, digits=2)), 
-       pvalue = as.numeric(format(pvalue, digits=2)), 
-       FDR = as.numeric(format(FDR, digits=2)),
-       beta = as.numeric(format(beta, digits=2))) %>% 
-  dplyr::rename(Id=gene, padj=FDR)
-
-cis <- right_join(gene_info, cis)
-cis <- data.frame(snps=genotypes_filtered$id, num_ref=rowSums(snps==0)) %>% inner_join(cis)
-
-write_tsv(cis, "Shiny/GENEX-FB2/Data/cis_eqtl.txt")
-
-trans <- me$trans$eqtls %>%
-  mutate(gene = sub("(ENSG[0-9]+)\\.[0-9]+", '\\1', gene),
-         statistic = as.numeric(format(statistic, digits=2)), 
-         pvalue = as.numeric(format(pvalue, digits=2)), 
-         FDR = as.numeric(format(FDR, digits=2)),
-         beta = as.numeric(format(beta, digits=2))) %>%
-  dplyr::rename(Id=gene, padj=FDR)
-
-trans <- dplyr::select(cis, snps, cisId=Id, cisSYMBOL=SYMBOL) %>% left_join(trans)
-trans <- right_join(gene_info, trans)
-trans <- data.frame(snps=genotypes_filtered$id, num_ref=rowSums(snps==0)) %>% inner_join(trans)
-
-write_tsv(trans, "Data/trans_eqtl.txt")
-
-save.image(file="MatrixEQTL/results.RData")
