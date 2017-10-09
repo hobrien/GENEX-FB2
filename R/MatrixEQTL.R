@@ -42,7 +42,7 @@ counts <- dplyr::select(counts, id=Id, everything())
 
 print(paste("reading", opt$genes))
 genepos = read.table(opt$genes, header = TRUE, stringsAsFactors = FALSE);
-genepos <- genepos %>% mutate(geneid= str_replace(geneid, '(ENSG\\d+)\\.\\d+', '\\1')) %>% rename(id=geneid)
+genepos <- genepos %>% mutate(geneid= str_replace(geneid, '(ENS[GT]\\d+)\\.\\d+', '\\1')) %>% rename(id=geneid)
 genepos <- genepos %>% semi_join(counts, by=c("id"))
 
 # import co-variates
