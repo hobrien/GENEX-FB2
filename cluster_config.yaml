@@ -1,0 +1,6 @@
+__default__:
+    num_cores: 1
+    maxvmem: 4G
+matrix_eqtl:
+    num_cores: 1
+    maxvmem: 40G
