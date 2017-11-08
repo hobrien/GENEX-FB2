@@ -10,7 +10,7 @@ option_list <- list(
   make_option(c("-e", "--expression"), type="character", default="../examples/brem_data/expression.csv", 
               help="counts matrix (normalised, vst-transformed)"),
   make_option(c("-c", "--covariates"), type="character", default=NULL, 
-              help="counts matrix (normalised, vst-transformed)"),
+              help="covariates"),
   make_option(c("-p", "--ploidy"), type="character", default='haploid', 
               help="haploid (genotypes=c(0,1) or diploid (genotypes=c(0,1,2))"),
   make_option(c("-n", "--num_factors"), type="integer", default=25, 
@@ -39,19 +39,21 @@ pheno <- read_tsv(opt$expression)
 colnames(pheno)[1]<-"ID" #make sure ID column is consistently named
 
 if (!is.null(opt$covariates)) {
-  covariates <- read_csv(opt$covariates) %>% as.data.frame()
-  rownames(covariates) <- covariates[,1]
-  covariates<-colnames(covariates[,-1])
+  print("reading covariates")
+  covariates <- read.table(opt$covariates, header=TRUE, stringsAsFactors = TRUE)
+  covariates <- covariates[match(colnames(pheno[,-1]), covariates$Sample),]
 }
-
 
 model=PEER()
 
 PEER_setNk(model, opt$num_factors)
 PEER_setPhenoMean(model, t(as.matrix(pheno[,-1])))
 if (!is.null(opt$covariates)) {
-    PEER_setCovariates(model, as.matrix(covariates))
+  print("setting covariates")
+  PEER_setCovariates(model, as.matrix(mutate_all(covariates[,-1], as.numeric)))
 }
+
+print("updating model")
 PEER_update(model)
 
 save.image(file="PEER.RData")
@@ -65,8 +67,8 @@ residuals$ID <- pheno$ID
 residuals <- dplyr::select(residuals, ID, everything())
 residuals %>% write_tsv(opt$residuals)
 
-factors <- PEER_getX(model) %>% t() %>% as_tibble()
-factors$ID <- pheno$ID
+factors <- PEER_getX(model) %>% as_tibble()
+factors$ID <- colnames(pheno[,-1])
 factors <- dplyr::select(factors, ID, everything()) 
 factors %>% write_tsv(opt$out)
 
