@@ -68,9 +68,7 @@ target <- dplyr::select(target, id, everything())
 print(paste("reading", opt$genotypes))
 snp_tbl<- read_delim(opt$genotypes, delim='\t')
 snp_tbl <- snp_tbl %>% dplyr::select(-CHR, -`(C)M`, -POS, -COUNTED, -ALT) %>%
-  gather(key, value, -SNP) %>% 
-  mutate(key=str_replace(key, '_.*', '')) %>% 
-  spread(key, value)
+  mutate_at(vars(-SNP), funs(str_replace(., '_.*', '')))
 #snp_tbl <- snp_tbl %>%  mutate(IID = str_replace(IID, '_[ACTG]', ''))
 #snp_tbl <- dplyr::rename(snp_tbl,  `18208` = `18121`)
 snp_tbl <- snp_tbl[ , order(names(snp_tbl))]

@@ -141,7 +141,6 @@ rule excluded_sites:
         dup="Genotypes/Sort/chr{chr_num}.sorted.check.dup"
     output:
         "Genotypes/FilterDup/chr{chr_num}.excluded_sites.txt",
-        maxvmem = "4G"
     shell:
         "cut -f 1,2 {input.nonSnp} > {output}; cut -f 2 {input.dup} | perl -pe 's/:/\t/' >> {output}"
 
