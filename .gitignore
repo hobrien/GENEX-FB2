@@ -42,15 +42,19 @@ Python/.ipynb_checkpoints/*
 # Results folders
 Results/*
 MatrixEQTL/*
+MatrixEQTL_old/*
 Genotyping/*
+Figures/*
 
-# Genome Scale files
-Data/HRC.r1-1.GRCh37.wgs.mac5.sites.tab
+# Input data
+Data/*
+Genotypes/*
 
 # Count data
 Counts/*
 
 # Shinyapp.io info
 Shiny/GENEX-FB2/Data
+Shiny/GENEX-FB2/DataCopy
 Shiny/GENEX-FB2/rsconnect
 

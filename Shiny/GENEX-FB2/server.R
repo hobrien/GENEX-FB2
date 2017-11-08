@@ -24,22 +24,21 @@ top_cis <- cis %>% group_by(SYMBOL) %>% arrange(pvalue) %>% slice(1) %>% ungroup
 trans <- read_delim("./Data/trans_eqtl.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
 top_trans <- trans %>% group_by(SYMBOL, cisSYMBOL) %>% arrange(pvalue) %>% slice(1) %>% ungroup()
 
-target <- read_delim("./Data/target.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
-  mutate(label=as.character(label))
+target <- read_delim("./Data/SampleInfo.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  mutate(Sample=as.character(Sample))
 
 PlotEQTL<-function(row_num, counts, cis, target, snps) {
   qtl_stats <- cis[row_num,]
-  geneID <- qtl_stats$SYMBOL
+  geneID <- qtl_stats$Id
   snp <- qtl_stats$snps
-  data <- counts %>% filter(SYMBOL == geneID | Id == geneID) %>%  
-    dplyr::select(-SYMBOL, -Id, -Chr) %>%
-    gather() %>%
-    separate(key, into=c('norm', 'label'), sep='[.]') %>%
-    dplyr::select(label, value) %>%
+  data <- counts %>% filter(Id == geneID) %>%  
+    dplyr::select(-Id) %>%
+    gather("Sample", "value") %>%
+    dplyr::select(Sample, value) %>%
     left_join(target)
   data<- snps %>% filter(id==snp) %>%
     dplyr::select(-id) %>%
-    gather(label, genotype) %>%
+    gather(Sample, genotype) %>%
     mutate(genotype = factor(genotype)) %>%
     inner_join(data)
   statistic <- qtl_stats$statistic[1]

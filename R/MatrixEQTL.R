@@ -6,21 +6,25 @@ library(stringr)
 library("optparse")
 
 option_list <- list(
-  make_option(c("--genotypes"), type="character", 
+  make_option(c("--genotypes"), type="character", default='../MatrixEQTL/genotypes.txt',
               help="Additive genotypes file from PLINK (recodeA)"),
-  make_option(c("--counts"), type="character", 
+  make_option(c("--counts"), type="character", default="../Data/MalevsFemale.complete.txt",
               help="Counts file from SARtools"),
-  make_option(c("--snps"), type="character", 
+  make_option(c("--snps"), type="character", default="../Genotypes/Plink/genotypes.map",
               help="SNP positions (plink map file)"),
-  make_option(c("--genes"), type="character",  
+  make_option(c("--genes"), type="character", default="../Data/geneloc.txt",
               help="Positions of genes (geneID, chr, start, end)"),
-  make_option(c("--cofactors"), type="character", 
+  make_option(c("--cofactors"), type="character", default="../Data/SampleInfo.txt",
               help="Information about each sample"),
-  make_option(c("--cis"), type="character", 
+  make_option(c("--cis"), type="character", default="../MatrixEQTL/cis_eqtl.txt",
               help="table of cis eQTLs"),
-  make_option(c("--trans"), type="character", 
+  make_option(c("--trans"), type="character", default="../MatrixEQTL/trans_eqtl.txt",
               help="table of transeQTLs"),
-  make_option(c("--image"), type="character", 
+  make_option(c("--image"), type="character", default="../MatrixEQTL/results.RData",
+              help="R image file with all outfiles"),
+  make_option(c("--p_trans"), type="numeric", default=1e-4,
+              help="R image file with all outfiles"),
+  make_option(c("--p_cis"), type="numeric", default=1e-8,
               help="R image file with all outfiles")
  )
 opt_parser <- OptionParser(option_list=option_list)
@@ -28,6 +32,7 @@ opt <- parse_args(opt_parser)
 
 print(paste("reading", opt$counts))
 # Import normalised counts, filter, remove 'norm.', sort
+print(paste("reading", opt$counts))
 counts <- read_delim(opt$counts, "\t", escape_double = FALSE, trim_ws = TRUE) %>% 
   filter(! is.na(padj)) %>%
   dplyr::select(Id, starts_with('norm'))
@@ -45,6 +50,7 @@ print(paste("reading", opt$cofactors))
 # Seems that data are coerced into float/integer column-wiseduring import with 
 # the LoadFile command even though the data are encoded row-wise. I think the 
 # only solution to this is to round every thing to whole numbers.
+print(paste("reading", opt$cofactors))
 target <- read_delim(opt$cofactors, "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   mutate(Sample=as.character(Sample))
 target$Sex<-as.integer(factor(target$Sex))
@@ -59,13 +65,16 @@ target$id=rownames(target)
 target <- target[ , order(names(target))]
 target <- dplyr::select(target, id, everything())
 
+print(paste("reading", opt$genotypes))
 snp_tbl<- read_delim(opt$genotypes, delim='\t')
-snp_tbl <- snp_tbl %>% dplyr::select(-FID, -PAT, -MAT, -PHENOTYPE, -SEX) %>%
-  as.matrix() %>% t() %>% as.data.frame() %>%
-  mutate(IID = str_replace(IID, '_\w', ''))
+snp_tbl <- snp_tbl %>% dplyr::select(-CHR, -`(C)M`, -POS, -COUNTED, -ALT) %>%
+  gather(key, value, -SNP) %>% 
+  mutate(key=str_replace(key, '_.*', '')) %>% 
+  spread(key, value)
+#snp_tbl <- snp_tbl %>%  mutate(IID = str_replace(IID, '_[ACTG]', ''))
 #snp_tbl <- dplyr::rename(snp_tbl,  `18208` = `18121`)
 snp_tbl <- snp_tbl[ , order(names(snp_tbl))]
-snp_tbl <- rename(snp_tbl, id=IID)
+snp_tbl <- rename(snp_tbl, id=SNP)
 snp_tbl <- dplyr::select(snp_tbl, id, everything())
 
 # remove samples that are missing in one or more of the files
@@ -108,7 +117,7 @@ snps$fileOmitCharacters = "NA"; # denote missing values;
 snps$fileSkipRows = 1;          # one row of column labels
 snps$fileSkipColumns = 1;       # one column of row labels
 snps$fileSliceSize = 2000;      # read file in pieces of 2,000 rows
-snps$LoadFile( geneotype_file_name );
+snps$LoadFile( genotypes_file_name );
 
 #extract gene positions from GTF file
 #if (! file_test("-f", gene_location_file_name)) {
@@ -127,8 +136,8 @@ snpspos <- snpspos %>% dplyr::select(snp, chr, pos) %>%
 output_file_name_cis = opt$cis
 output_file_name_tra = opt$trans
 
-pvOutputThreshold_cis = 1e-5;
-pvOutputThreshold_tra = 1e-10;
+pvOutputThreshold_cis = opt$p_cis;
+pvOutputThreshold_tra = opt$p_trans;
 
 cisDist = 1e6;
 
@@ -157,3 +166,4 @@ me = Matrix_eQTL_main(
 unlink(output_file_name_tra);
 unlink(output_file_name_cis);
 
+save.image(opt$image)
