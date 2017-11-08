@@ -26,7 +26,7 @@ option_list <- list(
 opt_parser <- OptionParser(option_list=option_list)
 opt <- parse_args(opt_parser)
 
-
+print(paste("reading", opt$counts))
 # Import normalised counts, filter, remove 'norm.', sort
 counts <- read_delim(opt$counts, "\t", escape_double = FALSE, trim_ws = TRUE) %>% 
   filter(! is.na(padj)) %>%
@@ -35,10 +35,12 @@ colnames(counts) <- str_replace(colnames(counts), 'norm\\.', '')
 counts <- counts[ , order(names(counts))]
 counts <- dplyr::select(counts, id=Id, everything())
 
-genepos = read.table(opt$genes, header = TRUE, stringsAsFactors = FALSE);
-genepos <- genepos %>% mutate(geneid= str_replace(geneid, '(ENSG\\d+)\\.\\d+', '\\1')) %>% rename(id=geneid)
-genepos <- genepos %>% semi_join(counts, by=c("id"))
+print(paste("reading", opt$genes))
+genepos = read_delim(opt$genes, " ", col_names = c("id", "chr", "s1", "s2"), escape_double = FALSE, trim_ws = TRUE)
+genepos <- genepos %>% mutate(id= str_replace(id, '(ENSG\\d+)\\.\\d+', '\\1')) %>% 
+  semi_join(counts, by=c("id"))
 
+print(paste("reading", opt$cofactors))
 # import co-variates
 # Seems that data are coerced into float/integer column-wiseduring import with 
 # the LoadFile command even though the data are encoded row-wise. I think the 
