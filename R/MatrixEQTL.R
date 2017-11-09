@@ -30,7 +30,6 @@ option_list <- list(
 opt_parser <- OptionParser(option_list=option_list)
 opt <- parse_args(opt_parser)
 
-print(paste("reading", opt$counts))
 # Import normalised counts, filter, remove 'norm.', sort
 print(paste("reading", opt$counts))
 counts <- read_delim(opt$counts, "\t", escape_double = FALSE, trim_ws = TRUE) %>% 
@@ -81,7 +80,7 @@ target <- target %>% dplyr::select(-one_of(setdiff(colnames(target), colnames(co
 snp_tbl <- snp_tbl %>% dplyr::select(-one_of(setdiff(colnames(snp_tbl), colnames(counts))))
 
 print("save counts file and read in as matrix EQTL object")
-counts_file_name = tempfile()
+counts_file_name = "temp_counts.txt"
 write_tsv(counts, counts_file_name)
 
 gene = SlicedData$new();
