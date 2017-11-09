@@ -45,7 +45,6 @@ genepos = read_delim(opt$genes, " ", col_names = c("id", "chr", "s1", "s2"), esc
 genepos <- genepos %>% mutate(id= str_replace(id, '(ENSG\\d+)\\.\\d+', '\\1')) %>% 
   semi_join(counts, by=c("id"))
 
-print(paste("reading", opt$cofactors))
 # import co-variates
 # Seems that data are coerced into float/integer column-wiseduring import with 
 # the LoadFile command even though the data are encoded row-wise. I think the 
@@ -75,13 +74,13 @@ snp_tbl <- snp_tbl[ , order(names(snp_tbl))]
 snp_tbl <- rename(snp_tbl, id=SNP)
 snp_tbl <- dplyr::select(snp_tbl, id, everything())
 
-# remove samples that are missing in one or more of the files
+print("removing samples that are missing in one or more of the files")
 counts <- counts %>% dplyr::select(-one_of(setdiff(colnames(counts), colnames(target))))
 counts <- counts %>% dplyr::select(-one_of(setdiff(colnames(counts), colnames(snp_tbl))))
 target <- target %>% dplyr::select(-one_of(setdiff(colnames(target), colnames(counts))))
 snp_tbl <- snp_tbl %>% dplyr::select(-one_of(setdiff(colnames(snp_tbl), colnames(counts))))
 
-# save modified files and read in as matrix EQTL objects
+print("save counts file and read in as matrix EQTL object")
 counts_file_name = tempfile()
 write_tsv(counts, counts_file_name)
 
@@ -94,6 +93,7 @@ gene$fileSliceSize = 2000;      # read file in slices of 2,000 rows
 gene$LoadFile(counts_file_name);
 
 
+print("save covariates file and read in as matrix EQTL object")
 covariates_file_name = tempfile()
 write_tsv(target, covariates_file_name)
 
@@ -106,6 +106,7 @@ if(length(covariates_file_name)>0) {
   cvrt$LoadFile(covariates_file_name);
 }
 
+print("save genotypes file and read in as matrix EQTL object")
 genotypes_file_name = tempfile()
 write_tsv(snp_tbl, genotypes_file_name)
 
@@ -123,7 +124,7 @@ snps$LoadFile( genotypes_file_name );
 #}
 #system(paste("cat ~/BTSync/FetalRNAseq/Ref/genes.gtf | awk '{if ($3 == \"gene\") print $10, $1, $4, $5}' | sed 's/[\";]//g' >>", gene_location_file_name))
 #gene_location_file_name = "~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/geneloc.txt"
-
+print(paste("reading", opt$snps))
 snpspos <- read_tsv(opt$snps, col_names = c("chr", "snp",	"skip",	"pos"));
 snpspos <- snpspos %>% dplyr::select(snp, chr, pos) %>%
   mutate(chr = paste0("chr", chr)) %>%
@@ -143,6 +144,7 @@ useModel = modelLINEAR
 
 errorCovariance = numeric()
 
+print("finding eQTLs")
 me = Matrix_eQTL_main(
   snps = snps,
   gene = gene,
