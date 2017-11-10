@@ -7,10 +7,10 @@ library(optparse)
 option_list <- list(
   make_option(c("-g", "--genotypes"), type="character", default=NULL, 
               help="genotype matrix (additive)"),
-  make_option(c("-e", "--expression"), type="character", default="../examples/brem_data/expression.csv", 
+  make_option(c("-c", "--counts"), type="character", default="../examples/brem_data/expression.csv", 
               help="counts matrix (normalised, vst-transformed)"),
-  make_option(c("-c", "--covariates"), type="character", default=NULL, 
-              help="covariates"),
+  make_option(c("-b", "--batch"), type="character", default=NULL, 
+              help="batch factors/covariates"),
   make_option(c("-p", "--ploidy"), type="character", default='haploid', 
               help="haploid (genotypes=c(0,1) or diploid (genotypes=c(0,1,2))"),
   make_option(c("-n", "--num_factors"), type="integer", default=25, 
@@ -20,12 +20,13 @@ option_list <- list(
   make_option(c("-a", "--alpha"), type="character", default="../examples/brem_data/alpha.txt", 
               help="Outfile for alpha values of PEER factors"),
   make_option(c("-o", "--out"), type="character", default="../examples/brem_data/factors.txt", 
-              help="Outfile for PEER factors")
-  
+              help="Outfile for PEER factors"),
+  make_option(c("-e", "--exclude"), type="character", default='', 
+              help="IDs of samples to exclude")
 )
 opt_parser <- OptionParser(option_list=option_list)
 opt <- parse_args(opt_parser, positional_arguments=FALSE)
-
+exclude <- strsplit(opt$exclude, ',')[[1]]
 if (! opt$ploidy %in% c('haploid', 'diploid')) {
   stop("ploidy type not recognised. Must be one of (haploid, diploid)")
 }
@@ -35,10 +36,12 @@ if (!is.null(opt$genotypes)) {
   rownames(genfile) <- genfile[,1]
   genfile<-colnames(genfile[,-1])
 }
-pheno <- read_tsv(opt$expression)
-colnames(pheno)[1]<-"ID" #make sure ID column is consistently named
 
-if (!is.null(opt$covariates)) {
+pheno <- read_tsv(opt$counts)
+colnames(pheno)[1]<-"ID" #make sure ID column is consistently named
+pheno<-select(pheno, -one_of(exclude))
+
+if (!is.null(opt$batch)) {
   print("reading covariates")
   covariates <- read.table(opt$covariates, header=TRUE, stringsAsFactors = TRUE)
   covariates <- covariates[match(colnames(pheno[,-1]), covariates$Sample),]
@@ -73,6 +76,6 @@ factors <- dplyr::select(factors, ID, everything())
 factors %>% write_tsv(opt$out)
 
 alpha <- PEER_getAlpha(model) %>% as_tibble()
-alpha$factor <- factors$ID
+alpha$factor <- colnames(factors[,-1])
 alpha <- dplyr::select(alpha, factor, alpha=V1) 
 alpha %>% write_tsv(opt$alpha)
