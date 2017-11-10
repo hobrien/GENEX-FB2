@@ -57,7 +57,7 @@ target$RIN<- round(target$RIN, digits=0)
 target <- arrange(target, Sample)
 target <- as.data.frame(target)
 rownames(target) <- target$Sample
-target <- dplyr::select(target, -Sequencer, -ReadLength, -Sample)
+target <- dplyr::select(target, -ReadLength, -Sample)
 target<- as.data.frame(t(target))
 target$id=rownames(target)
 target <- target[ , order(names(target))]
