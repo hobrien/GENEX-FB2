@@ -18,7 +18,7 @@ rule rename_samples:
         ##FILTER=<ID=GENOTYPED,Description="Site was genotyped">
         ##FILTER=<ID=GENOTYPED_ONLY,Description="Site was genotyped only">"""
     input:
-        sample_info=config["reference"]["sample_info"],
+        sample_info=config["reference"]["genotyping_info"],
         vcf="Genotypes/{run}/hg19/chr{chr_num}.dose.vcf.gz"
     output:
         "Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz"
