@@ -43,7 +43,7 @@ pheno<-select(pheno, -one_of(exclude))
 
 if (!is.null(opt$batch)) {
   print("reading covariates")
-  covariates <- read.table(opt$covariates, header=TRUE, stringsAsFactors = TRUE)
+  covariates <- read.table(opt$batch, header=TRUE, stringsAsFactors = TRUE)
   covariates <- covariates[match(colnames(pheno[,-1]), covariates$Sample),]
 }
 
