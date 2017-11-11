@@ -72,6 +72,7 @@ snp_tbl <- snp_tbl %>% dplyr::select(-CHR, -`(C)M`, -POS, -COUNTED, -ALT) %>%
 snp_tbl <- snp_tbl[ , order(names(snp_tbl))]
 snp_tbl <- rename(snp_tbl, id=SNP)
 snp_tbl <- dplyr::select(snp_tbl, id, everything())
+colnames(snp_tbl) <- str_replace(colnames(snp_tbl), '_.*', '')
 
 print("removing samples that are missing in one or more of the files")
 counts <- counts %>% dplyr::select(-one_of(setdiff(colnames(counts), colnames(target))))
