@@ -22,9 +22,9 @@ option_list <- list(
               help="table of transeQTLs"),
   make_option(c("--image"), type="character", default="../MatrixEQTL/results.RData",
               help="R image file with all outfiles"),
-  make_option(c("--p_trans"), type="numeric", default=1e-4,
+  make_option(c("--p_trans"), type="numeric", default=1e-8,
               help="R image file with all outfiles"),
-  make_option(c("--p_cis"), type="numeric", default=1e-8,
+  make_option(c("--p_cis"), type="numeric", default=1e-4,
               help="R image file with all outfiles")
  )
 opt_parser <- OptionParser(option_list=option_list)
@@ -149,8 +149,8 @@ me = Matrix_eQTL_main(
   snps = snps,
   gene = gene,
   cvrt = cvrt,
-  output_file_name     = output_file_name_tra,
-  pvOutputThreshold     = pvOutputThreshold_tra,
+  output_file_name = output_file_name_tra,
+  pvOutputThreshold  = pvOutputThreshold_tra,
   useModel = useModel,
   errorCovariance = errorCovariance,
   verbose = TRUE,
