@@ -51,7 +51,7 @@ model=PEER()
 
 PEER_setNk(model, opt$num_factors)
 PEER_setPhenoMean(model, t(as.matrix(pheno[,-1])))
-if (!is.null(opt$covariates)) {
+if (!is.null(opt$batch)) {
   print("setting covariates")
   PEER_setCovariates(model, as.matrix(mutate_all(covariates[,-1], as.numeric)))
 }
