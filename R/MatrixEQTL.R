@@ -42,7 +42,8 @@ counts <- dplyr::select(counts, id=Id, everything())
 print(paste("reading", opt$genes))
 genepos = read_delim(opt$genes, " ", col_names = c("id", "chr", "s1", "s2"), escape_double = FALSE, trim_ws = TRUE)
 genepos <- genepos %>% mutate(id= str_replace(id, '(ENSG\\d+)\\.\\d+', '\\1')) %>% 
-  semi_join(counts, by=c("id"))
+  semi_join(counts, by=c("id")) %>%
+  as.data.frame()
 
 # import co-variates
 # Seems that data are coerced into float/integer column-wiseduring import with 
