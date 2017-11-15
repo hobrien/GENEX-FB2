@@ -11,8 +11,8 @@ option_list <- list(
               help="counts matrix (normalised, vst-transformed)"),
   make_option(c("-b", "--batch"), type="character", default=NULL, 
               help="batch factors/covariates"),
-  make_option(c("-p", "--ploidy"), type="character", default='haploid', 
-              help="haploid (genotypes=c(0,1) or diploid (genotypes=c(0,1,2))"),
+  make_option(c("-p", "--pca"), type="character", default=NULL, 
+              help="principle components"),
   make_option(c("-n", "--num_factors"), type="integer", default=25, 
               help="Number of PEER factors to estimate"),
   make_option(c("-r", "--residuals"), type="character", default="../examples/brem_data/residuals.txt", 
@@ -27,9 +27,6 @@ option_list <- list(
 opt_parser <- OptionParser(option_list=option_list)
 opt <- parse_args(opt_parser, positional_arguments=FALSE)
 exclude <- strsplit(opt$exclude, ',')[[1]]
-if (! opt$ploidy %in% c('haploid', 'diploid')) {
-  stop("ploidy type not recognised. Must be one of (haploid, diploid)")
-}
 
 if (!is.null(opt$genotypes)) {
   genfile <- read_csv(opt$genotypes) %>% as.data.frame()
@@ -44,14 +41,26 @@ pheno<-select(pheno, -one_of(exclude))
 if (!is.null(opt$batch)) {
   print("reading covariates")
   covariates <- read.table(opt$batch, header=TRUE, stringsAsFactors = TRUE)
-  covariates <- covariates[match(colnames(pheno[,-1]), covariates$Sample),]
+  colnames(covariates)[1]<-"ID"
+  covariates$ID <- as.character(covariates$ID)
+  covariates <- covariates[match(colnames(pheno[,-1]), covariates$ID),]
 }
+
+if (!is.null(opt$pca)) {
+  print("reading PCA")
+  if (is.null(opt$batch)) {
+    covariates <- pheno[1,]
+  }
+  pca<-read_delim(opt$pca, delim=' ', col_names=FALSE) %>% select(-X1)
+  covariates<-inner_join(covariates, pca, by=c('ID' = 'X2')) %>% as.data.frame()
+}
+
 
 model=PEER()
 
 PEER_setNk(model, opt$num_factors)
 PEER_setPhenoMean(model, t(as.matrix(pheno[,-1])))
-if (!is.null(opt$batch)) {
+if (!is.null(opt$batch) | !is.null(opt$pca)) {
   print("setting covariates")
   PEER_setCovariates(model, as.matrix(mutate_all(covariates[,-1], as.numeric)))
 }
