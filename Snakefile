@@ -189,7 +189,7 @@ rule plink_filter:
     params:
         prefix = "Genotypes/Plink/genotypes",         
     shell:
-        "plink --bcf {input} --double-id --maf .05 --hwe .0001 --recode --out {params.prefix}"
+        "plink --bcf {input} --double-id --maf .05 --hwe .0001 --make-bed --out {params.prefix}"
 
 rule plink_ld_prune:
     input:
@@ -201,7 +201,7 @@ rule plink_ld_prune:
         input_prefix = "Genotypes/Plink/genotypes",
         output_prefix = "Genotypes/Plink/genotypes_ld_prune"          
     shell:
-        "plink --bfile {params.input_prefix} --indep-pairwise 250 5 0.2 --out {params.outputprefix}"
+        "plink --bfile {params.input_prefix} --indep-pairwise 250 5 0.2 --out {params.output_prefix}"
 
 rule plink_pca:
     input:
@@ -212,7 +212,7 @@ rule plink_pca:
         input_prefix = "Genotypes/Plink/genotypes_ld_prune",        
         output_prefix = "Genotypes/Plink/genotypes_pca"          
     shell:
-        "plink --bfile {params.input_prefix} --pca --extract --out {params.outputprefix}"
+        "plink --bfile {params.input_prefix} --pca --extract --out {params.output_prefix}"
 
 rule plink_recode:
     input:
