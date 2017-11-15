@@ -8,8 +8,6 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        cis="MatrixEQTL/cis_eqtl.txt",
-        trans="MatrixEQTL/trans_eqtl.txt",
         image="MatrixEQTL/results.RData"
 
 rule rename_samples:
@@ -220,13 +218,14 @@ rule matrix_eqtl:
         gene_loc="Data/geneloc.txt",
         sample_info=config["reference"]["sample_info"]
     output:
+        image="MatrixEQTL/results.RData"
+    params:
         cis="MatrixEQTL/cis_eqtl.txt",
         trans="MatrixEQTL/trans_eqtl.txt",
-        image="MatrixEQTL/results.RData"
     log:
         "Logs/MatrixEQTL/matrix_eqtl.txt"
     shell:
         "(Rscript R/MatrixEQTL.R  --genotypes {input.genotypes} "
         "--counts {input.gene_counts} --snps {input.snp_pos} --genes {input.gene_loc} "
-        "--cofactors {input.sample_info} --cis {output.cis} "
-        "--trans {output.trans} --image {output.image}) 2> {log}"
+        "--cofactors {input.sample_info} --cis {params.cis} "
+        "--trans {params.trans} --image {output.image}) 2> {log}"
