@@ -8,7 +8,7 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        image="MatrixEQTL/results.RData"
+        "Genotypes/Plink/genotypes_ld_prune.eigenvec"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -190,6 +190,29 @@ rule plink_filter:
         prefix = "Genotypes/Plink/genotypes",         
     shell:
         "plink --bcf {input} --double-id --maf .05 --hwe .0001 --recode --out {params.prefix}"
+
+rule plink_ld_prune:
+    input:
+        "Genotypes/Plink/genotypes.map"
+    output:
+        "Genotypes/Plink/genotypes_ld_prune.map",
+        "Genotypes/Plink/genotypes_ld_prune.log"
+    params:
+        input_prefix = "Genotypes/Plink/genotypes",
+        output_prefix = "Genotypes/Plink/genotypes_ld_prune"          
+    shell:
+        "plink --bfile {params.input_prefix} --indep-pairwise 250 5 0.2 --out {params.outputprefix}"
+
+rule plink_pca:
+    input:
+        "Genotypes/Plink/genotypes_ld_prune.map",
+    output:
+        "Genotypes/Plink/genotypes_ld_prune.eigenvec",
+    params:
+        input_prefix = "Genotypes/Plink/genotypes_ld_prune",        
+        output_prefix = "Genotypes/Plink/genotypes_pca"          
+    shell:
+        "plink --bfile {params.input_prefix} --pca --extract --out {params.outputprefix}"
 
 rule plink_recode:
     input:
