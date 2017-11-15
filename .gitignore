@@ -45,6 +45,7 @@ MatrixEQTL/*
 MatrixEQTL_old/*
 Genotyping/*
 Figures/*
+Peer/*
 
 # Input data
 Data/*
@@ -57,4 +58,7 @@ Counts/*
 Shiny/GENEX-FB2/Data
 Shiny/GENEX-FB2/DataCopy
 Shiny/GENEX-FB2/rsconnect
+
+# snakemake output
+dag.svg
 
