@@ -274,6 +274,18 @@ rule peer:
         "-n {params.num_peer} -c {params.counts} -b {params.sample_info} "
         "-e {params.excluded} -o {params.factors} -r {output} -a {params.alpha}) > {log}"
 
+rule filter_counts:
+    input:
+        gene_counts=config["count_data"],
+        gene_loc="Data/geneloc.txt"
+    output:
+        "Data/expression.bed"
+    params:
+        min=6
+    shell:
+        "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
+        "--min {params.min} --average --out {output}"
+        
 rule matrix_eqtl:
     input:
         genotypes="Genotypes/Plink/recoded.traw",
