@@ -1,4 +1,4 @@
-#snakemake --cluster-config cluster_config.yaml --cluster "qsub -pe smp {cluster.num_cores} -l h_vmem={cluster.maxvmem}" -j 20
+#snakemake --use-conda --cluster-config cluster_config.yaml --cluster "qsub -pe smp {cluster.num_cores} -l h_vmem={cluster.maxvmem}" -j 20
 
 configfile: "config.yaml"
 
@@ -8,7 +8,8 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        "Genotypes/Plink/genotypes_ld_prune.eigenvec"
+        "Peer/residuals.txt",
+        "Genotypes/Combined/combined_filtered.bcf"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -16,7 +17,7 @@ rule rename_samples:
         ##FILTER=<ID=GENOTYPED,Description="Site was genotyped">
         ##FILTER=<ID=GENOTYPED_ONLY,Description="Site was genotyped only">"""
     input:
-        sample_info=config["reference"]["genotyping_info"],
+        sample_info=config["genotyping_info"],
         vcf="Genotypes/{run}/hg19/chr{chr_num}.dose.vcf.gz"
     output:
         "Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz"
@@ -180,12 +181,31 @@ rule combine_chromosomes:
     shell:
         "(bcftools concat -Ob -o {output} {input}) 2> {log}"
 
+rule fill_tags:
+    input:
+        rules.combine_chromosomes.output
+    output:
+        "Genotypes/Combined/combined_tags.bcf"
+    shell:
+        "bcftools +fill-tags {input} -Ob -o {output}"
+
+rule filter_tags:
+    input:
+        rules.fill_tags.output
+    output:
+        "Genotypes/Combined/combined_filtered.bcf"
+    params:
+        maf=.05,
+        hwe=.0001,
+        r2=.6
+    shell:
+        "bcftools view -e'MAF<{params.maf} || HWE<{params.hwe} || R2<{params.r2}' {input} -Ob -o {output}"
+        
 rule plink_filter:
     input:
         "Genotypes/Combined/combined.bcf"
     output:
-        "Genotypes/Plink/genotypes.map",
-        "Genotypes/Plink/genotypes.log"
+        "Genotypes/Plink/genotypes.bed"
     params:
         prefix = "Genotypes/Plink/genotypes",         
     shell:
@@ -193,10 +213,9 @@ rule plink_filter:
 
 rule plink_ld_prune:
     input:
-        "Genotypes/Plink/genotypes.map"
+        rules.plink_filter.output
     output:
-        "Genotypes/Plink/genotypes_ld_prune.map",
-        "Genotypes/Plink/genotypes_ld_prune.log"
+        "Genotypes/Plink/genotypes_ld_prune.prune.in"
     params:
         input_prefix = "Genotypes/Plink/genotypes",
         output_prefix = "Genotypes/Plink/genotypes_ld_prune"          
@@ -205,15 +224,16 @@ rule plink_ld_prune:
 
 rule plink_pca:
     input:
-        "Genotypes/Plink/genotypes_ld_prune.map",
+        rules.plink_ld_prune.output
     output:
-        "Genotypes/Plink/genotypes_ld_prune.eigenvec",
+        "Genotypes/Plink/genotypes_pca.eigenvec",
     params:
-        input_prefix = "Genotypes/Plink/genotypes_ld_prune",        
-        output_prefix = "Genotypes/Plink/genotypes_pca"          
+        input_prefix = "Genotypes/Plink/genotypes",        
+        output_prefix = "Genotypes/Plink/genotypes_pca",
+        num_components = 3        
     shell:
-        "plink --bfile {params.input_prefix} --pca --extract --out {params.output_prefix}"
-
+        "plink --bfile {params.input_prefix} --pca {params.num_components} --extract {input} --out {params.output_prefix}"
+ 
 rule plink_recode:
     input:
         "Genotypes/Combined/combined.bcf"
@@ -233,13 +253,34 @@ rule get_gene_positions:
     shell:
         "cat {input} | awk '{{if ($3 == \"gene\") print $10, $1, $4, $5}}' | sed 's/[\";]//g' > {output}"
 
+rule peer:
+    input:
+        rules.plink_pca.output
+    output:
+        "Peer/residuals.txt"
+    params:
+        sample_info=config["sample_info"],
+        factors = "Peer/factors.txt",
+        alpha = "Peer/alpha.txt",
+        counts = "Data/counts_vst.txt",
+        num_peer = 25,
+        excluded = "17046,16385,17048,16024,16115"
+    log:
+        "Logs/PEER/peer.txt"
+    conda:
+        "env/peer.yaml"
+    shell:
+        "(Rscript /c8000xd3/rnaseq-heath/GENEX-FB2/R/PEER.R  -p {input} "
+        "-n {params.num_peer} -c {params.counts} -b {params.sample_info} "
+        "-e {params.excluded} -o {params.factors} -r {output} -a {params.alpha}) > {log}"
+
 rule matrix_eqtl:
     input:
         genotypes="Genotypes/Plink/recoded.traw",
         snp_pos="Genotypes/Plink/genotypes.map",
         gene_counts=config["count_data"],
         gene_loc="Data/geneloc.txt",
-        sample_info=config["reference"]["sample_info"]
+        sample_info=config["sample_info"]
     output:
         image="MatrixEQTL/results.RData"
     params:

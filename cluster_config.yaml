@@ -4,3 +4,6 @@ __default__:
 matrix_eqtl:
     num_cores: 1
     maxvmem: 40G
+peer:
+    num_cores: 1
+    maxvmem: 30G
