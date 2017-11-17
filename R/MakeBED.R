@@ -38,3 +38,4 @@ genepos <- genepos %>% mutate(id= str_replace(id, '(ENSG\\d+)\\.\\d+', '\\1')) %
   filter(chr %in% paste0('chr', c(seq(22), 'X', 'Y'))) %>%
   select(`#Chr`=chr, start=s1, end=s2, ID=id, everything())
 
+write_tsv(genepos, opt$out)

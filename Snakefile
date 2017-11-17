@@ -9,7 +9,8 @@ configfile: "config.yaml"
 rule all:
     input:
         "Peer/residuals.txt",
-        "Genotypes/Combined/combined_filtered.bcf"
+        "Genotypes/Combined/combined_filtered.bcf",
+        "Data/expression.bed"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -277,7 +278,7 @@ rule peer:
 rule filter_counts:
     input:
         gene_counts=config["count_data"],
-        gene_loc="Data/geneloc.txt"
+        geneloc="Data/geneloc.txt"
     output:
         "Data/expression.bed"
     params:
