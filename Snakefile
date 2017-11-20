@@ -8,7 +8,7 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        "Peer/residuals.txt",
+        "Genotypes/Plink/genotypes_pca.eigenvec",
         "Genotypes/Combined/combined_filtered.bcf"
 
 rule rename_samples:
@@ -199,29 +199,6 @@ rule plink_filter:
     shell:
         "plink --bcf {input} --double-id --maf .05 --hwe .0001 --make-bed --out {params.prefix}"
 
-rule plink_ld_prune:
-    input:
-        rules.plink_filter.output
-    output:
-        "Genotypes/Plink/genotypes_ld_prune.prune.in"
-    params:
-        input_prefix = "Genotypes/Plink/genotypes",
-        output_prefix = "Genotypes/Plink/genotypes_ld_prune"          
-    shell:
-        "plink --bfile {params.input_prefix} --indep-pairwise 250 5 0.2 --out {params.output_prefix}"
-
-rule plink_pca:
-    input:
-        rules.plink_ld_prune.output
-    output:
-        "Genotypes/Plink/genotypes_pca.eigenvec",
-    params:
-        input_prefix = "Genotypes/Plink/genotypes",        
-        output_prefix = "Genotypes/Plink/genotypes_pca",
-        num_components = 3        
-    shell:
-        "plink --bfile {params.input_prefix} --pca {params.num_components} --extract {input} --out {params.output_prefix}"
- 
 rule plink_recode:
     input:
         "Genotypes/Combined/combined.bcf"
@@ -240,27 +217,6 @@ rule get_gene_positions:
         "Data/geneloc.txt"
     shell:
         "cat {input} | awk '{{if ($3 == \"gene\") print $10, $1, $4, $5}}' | sed 's/[\";]//g' > {output}"
-
-rule peer:
-    input:
-        rules.plink_pca.output
-    output:
-        "Peer/residuals.txt"
-    params:
-        sample_info=config["sample_info"],
-        factors = "Peer/factors.txt",
-        alpha = "Peer/alpha.txt",
-        counts = "Data/counts_vst.txt",
-        num_peer = 25,
-        excluded = "17046,16385,17048,16024,16115,11449"
-    log:
-        "Logs/PEER/peer.txt"
-    conda:
-        "env/peer.yaml"
-    shell:
-        "(Rscript /c8000xd3/rnaseq-heath/GENEX-FB2/R/PEER.R  -p {input} "
-        "-n {params.num_peer} -c {params.counts} -b {params.sample_info} "
-        "-e {params.excluded} -o {params.factors} -r {output} -a {params.alpha}) > {log}"
 
 rule filter_counts:
     input:
@@ -284,7 +240,7 @@ rule select_samples:
     params:
         min=6
     shell:
-        "bcftools view -s `head -1 {input.expression} | cut --complement -f 1-4 | perl -pe 's/\s+/,/g'` "
+        "bcftools view -s `head -1 {input.expression} | cut --complement -f 1-4 | perl -pe 's/\s+(?!$)/,/g'` "
         "{input.vcf} -Ob -o {output} "
 
 rule filter_tags:
@@ -298,7 +254,62 @@ rule filter_tags:
         r2=.6
     shell:
         "bcftools view -e'MAF<{params.maf} || HWE<{params.hwe} || R2<{params.r2}' {input} -Ob -o {output}"
-        
+
+rule plink_import:
+    input:
+        rules.filter_tags.output
+    output:
+        "Genotypes/Plink/genotypes.bed"
+    params:
+        prefix = "Genotypes/Plink/genotypes",         
+    shell:
+        "plink --bcf {input} --double-id --make-bed --out {params.prefix}"
+
+rule plink_ld_prune:
+    input:
+        rules.plink_import.output
+    output:
+        "Genotypes/Plink/genotypes_ld_prune.prune.in"
+    params:
+        input_prefix = "Genotypes/Plink/genotypes",
+        output_prefix = "Genotypes/Plink/ld_prune"
+    shell:
+        "plink --bfile {params.input_prefix} --indep-pairwise 250 5 0.2 --out {params.output_prefix}"
+
+rule plink_pca:
+    input:
+        vcf = rules.filter_tags.output,
+        included = rules.plink_ld_prune.output
+    output:
+        "Genotypes/Plink/genotypes_pca.eigenvec",
+    params:
+        input_prefix = "Genotypes/Plink/ld_prune",
+        output_prefix = "Genotypes/Plink/pca",
+        num_components = 3
+    shell:
+        "plink --bfile {params.input_prefix} --pca {params.num_components} --extract {input.included} --out {params.output_prefix}"
+
+rule peer:
+    input:
+        rules.plink_pca.output
+    output:
+        "Peer/residuals.txt"
+    params:
+        sample_info=config["sample_info"],
+        factors = "Peer/factors.txt",
+        alpha = "Peer/alpha.txt",
+        counts = "Data/counts_vst.txt",
+        num_peer = 25,
+        excluded = "17046,16385,17048,16024,16115,11449"
+    log:
+        "Logs/PEER/peer.txt"
+    conda:
+        "env/peer.yaml"
+    shell:
+        "(Rscript /c8000xd3/rnaseq-heath/GENEX-FB2/R/PEER.R  -p {input} "
+        "-n {params.num_peer} -c {params.counts} -b {params.sample_info} "
+        "-e {params.excluded} -o {params.factors} -r {output} -a {params.alpha}) > {log}"
+
 rule matrix_eqtl:
     input:
         genotypes="Genotypes/Plink/recoded.traw",
