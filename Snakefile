@@ -9,8 +9,7 @@ configfile: "config.yaml"
 rule all:
     input:
         "Peer/residuals.txt",
-        "Genotypes/Combined/combined_filtered.bcf",
-        "Data/expression.bed"
+        "Genotypes/Combined/combined_inc_samples.bcf"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -286,6 +285,18 @@ rule filter_counts:
     shell:
         "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
         "--min {params.min} --average --out {output}"
+
+rule select_samples:
+    input:
+        expression=rules.filter_counts.output,
+        vcf=rules.filter_tags.output
+    output:
+        "Genotypes/Combined/combined_inc_samples.bcf"
+    params:
+        min=6
+    shell:
+        "bcftools view -s `head -1 {input.expression} | cut --complement -f 1-4 | perl -pe 's/\t/,/g'` "
+        "{input.vcf} -Ob -o {output} "
         
 rule matrix_eqtl:
     input:
