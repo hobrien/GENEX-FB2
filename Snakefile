@@ -8,8 +8,7 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        "Genotypes/Plink/pca.eigenvec",
-        "Genotypes/Combined/combined_filtered.bcf"
+       "Peer/factors.txt"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -290,24 +289,23 @@ rule plink_pca:
 
 rule peer:
     input:
-        rules.plink_pca.output
+        pca=rules.plink_pca.output,
+        counts = rules.filter_counts.output
     output:
-        "Peer/residuals.txt"
+        "Peer/factors.txt"
     params:
         sample_info=config["sample_info"],
-        factors = "Peer/factors.txt",
+        residuals = "Peer/residuals.txt",
         alpha = "Peer/alpha.txt",
-        counts = rules.filter_counts.output,
-        num_peer = 25,
-        excluded = "17046,16385,17048,16024,16115,11449"
+        num_peer = 25
     log:
         "Logs/PEER/peer.txt"
     conda:
         "env/peer.yaml"
     shell:
-        "(Rscript /c8000xd3/rnaseq-heath/GENEX-FB2/R/PEER.R  -p {input} "
-        "-n {params.num_peer} -c {params.counts} -b {params.sample_info} "
-        "-e {params.excluded} -o {params.factors} -r {output} -a {params.alpha}) > {log}"
+        "(Rscript /c8000xd3/rnaseq-heath/GENEX-FB2/R/PEER.R -p {input.pca} "
+        "-n {params.num_peer} -c {input.counts} -b {params.sample_info} "
+        "-r {params.residuals} -o {output} -a {params.alpha}) > {log}"
 
 rule matrix_eqtl:
     input:
