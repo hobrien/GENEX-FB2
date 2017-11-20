@@ -207,11 +207,12 @@ rule filter_counts:
     output:
         "Data/expression.bed"
     params:
-        min=6,
+        min=5,
+        num=10,
         excluded = "17046,16385,17048,16024,16115,11449"
     shell:
         "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
-        "--min {params.min} --average --out {output} --exclude {params.excluded}"
+        "--min {params.min} --num {params.num} --out {output} --exclude {params.excluded}"
 
 rule select_samples:
     input:
@@ -280,7 +281,7 @@ rule peer:
         sample_info=config["sample_info"],
         residuals = "Peer/residuals.txt",
         alpha = "Peer/alpha.txt",
-        num_peer = 25
+        num_peer = 10
     log:
         "Logs/PEER/peer.txt"
     conda:
