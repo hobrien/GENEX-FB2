@@ -34,9 +34,14 @@ if (!is.null(opt$genotypes)) {
   genfile<-colnames(genfile[,-1])
 }
 
+print("reading phenotypes")
 pheno <- read_tsv(opt$counts)
+print("finished reading phenotypes")
+pheno<-select(pheno, -one_of("#Chr", "start", "end")) # added columns in BED file for FastQTL
 colnames(pheno)[1]<-"ID" #make sure ID column is consistently named
-pheno<-select(pheno, -one_of(exclude))
+if (length(exclude) > 0) {
+  pheno<-select(pheno, -one_of(exclude))
+}
 
 if (!is.null(opt$batch)) {
   print("reading covariates")
@@ -44,6 +49,7 @@ if (!is.null(opt$batch)) {
   colnames(covariates)[1]<-"ID"
   covariates$ID <- as.character(covariates$ID)
   covariates <- covariates[match(colnames(pheno[,-1]), covariates$ID),]
+  covariates
 }
 
 if (!is.null(opt$pca)) {
@@ -51,8 +57,13 @@ if (!is.null(opt$pca)) {
   if (is.null(opt$batch)) {
     covariates <- pheno[1,]
   }
-  pca<-read_delim(opt$pca, delim=' ', col_names=FALSE) %>% select(-X1)
+  pca<-read_delim(opt$pca, delim=' ', col_names=FALSE) %>% 
+    select(-X1) %>%
+    mutate(X2=as.character(X2))
+  print("joining PCA, covariates")
+  pca
   covariates<-inner_join(covariates, pca, by=c('ID' = 'X2')) %>% as.data.frame()
+  print("finished joining PCA, covariates")
 }
 
 
