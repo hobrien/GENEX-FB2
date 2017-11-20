@@ -8,7 +8,7 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        "Genotypes/Plink/genotypes_pca.eigenvec",
+        "Genotypes/Plink/pca.eigenvec",
         "Genotypes/Combined/combined_filtered.bcf"
 
 rule rename_samples:
@@ -269,7 +269,7 @@ rule plink_ld_prune:
     input:
         rules.plink_import.output
     output:
-        "Genotypes/Plink/genotypes_ld_prune.prune.in"
+        "Genotypes/Plink/ld_prune.prune.in"
     params:
         input_prefix = "Genotypes/Plink/genotypes",
         output_prefix = "Genotypes/Plink/ld_prune"
@@ -278,16 +278,15 @@ rule plink_ld_prune:
 
 rule plink_pca:
     input:
-        vcf = rules.filter_tags.output,
-        included = rules.plink_ld_prune.output
+        rules.plink_ld_prune.output
     output:
-        "Genotypes/Plink/genotypes_pca.eigenvec",
+        "Genotypes/Plink/pca.eigenvec",
     params:
-        input_prefix = "Genotypes/Plink/ld_prune",
+        input_prefix = "Genotypes/Plink/genotypes",
         output_prefix = "Genotypes/Plink/pca",
         num_components = 3
     shell:
-        "plink --bfile {params.input_prefix} --pca {params.num_components} --extract {input.included} --out {params.output_prefix}"
+        "plink --bfile {params.input_prefix} --pca {params.num_components} --extract {input} --out {params.output_prefix}"
 
 rule peer:
     input:
@@ -298,7 +297,7 @@ rule peer:
         sample_info=config["sample_info"],
         factors = "Peer/factors.txt",
         alpha = "Peer/alpha.txt",
-        counts = "Data/counts_vst.txt",
+        counts = rules.filter_counts.output,
         num_peer = 25,
         excluded = "17046,16385,17048,16024,16115,11449"
     log:
