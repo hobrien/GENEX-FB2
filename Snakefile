@@ -153,26 +153,9 @@ rule filter_dup:
     shell:
         "(if [ -s {input.excluded_sites} ] ; then bcftools filter -T ^{input.excluded_sites} -Ob -o {output} {input.vcf} ; else bcftools view -Ob -o {output} {input.vcf} ; fi) 2> {log}"
 
-rule filter_prob:
-    input:
-        "Genotypes/FilterDup/chr{chr_num}.filter_dup.bcf"
-    output:
-        "Genotypes/FilterProb/chr{chr_num}.filter_prob.bcf"
-    run:
-        from pysam import VariantFile
-        bcf_in = VariantFile(input[0])  # auto-detect input format
-        bcf_out = VariantFile(output[0], 'wb', header=bcf_in.header)
-        for site in bcf_in.fetch():
-            keep_site = 0 # default option is to remove SNP
-            for sample, rec in site.samples.items():
-                if max(rec.get('GP')[1:]) > 0.9:
-                    keep_site = 1 # do not remove SNP if either het or non-ref homo is greater than .9 for any sample
-            if keep_site:
-                bcf_out.write(site)
-
 rule combine_chromosomes:
     input:
-        expand("Genotypes/FilterProb/chr{chr_num}.filter_prob.bcf", chr_num=range(1,23)) # change this to range(1,23) to run on all samples
+        expand("Genotypes/FilterDup/chr{chr_num}.filter_dup.bcf", chr_num=range(1,23)) # change this to range(1,23) to run on all samples
     output:
         "Genotypes/Combined/combined.bcf"
     log:
@@ -250,7 +233,7 @@ rule filter_tags:
     params:
         maf=.05,
         hwe=.0001,
-        r2=.6
+        r2=.8
     shell:
         "bcftools view -e'MAF<{params.maf} || HWE<{params.hwe} || R2<{params.r2}' {input} -Ob -o {output}"
 
@@ -317,7 +300,9 @@ rule fast_qtl:
     params:
         min = 1000,
         max = 10000
+    log:
+        "Logs/FastQTL/fastQTL.txt"
     shell:
-        "fastQTL --vcf {input.genptypes} --bed {input.counts} {output} "
-        "--region 22:17000000-18000000 --permute {params.min} {params.max} " 
-        "--out permutations.default.txt.gz"
+        "src/FastQTL-2.165.linux/bin/fastQTL.1.165.linux --vcf {input.genotypes} "
+        " --bed {input.counts} --cov {input.covariates} --chunk "
+        " --permute {params.min} {params.max} --out {output} -- log {log}"
