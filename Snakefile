@@ -2,13 +2,45 @@
 
 configfile: "config.yaml"
 
-# this script currently adds sample names to vcf files, merges them, lifts them over to GRCh38, coordinate-sorts the output, and removes non-ref bases and duplicated sites (non-binary SNPs)
-# previously I filtered SNPs with alt allele probabilities < 0.9
-# there's also a bunch of stuff like removing SNPs with low MAF and testing for HWE that would probably be useful
+"""
+rules:
+    rename_samples: replace genotyping well IDs with BrianBank IDs in imputed vcf files
+    index_vcf: use bcftools to index vcf with renamed samples
+    merge_vcf: merge vcf files from separate genotyping/imputation runs
+    index_vcf2: use bcftools to index merged vcf files
+    add_rsID: replace SNP IDs from imputation with rsIDs
+    lift_over: convert from hg19 coordinates to GRCh38 coordinates 
+    filter_chr: remove SNPs that do not map to chromosomes
+    sort_vcf: coordinate sort vcf (sort order is changed during liftover)
+    vcf_check: test for non-variable positions (?) and postions with >2 variants
+    excluded_sites: list non variable sites (?)/ sites >2 variants for exclusion
+    filter_dup: remove non variable sites (?)/ sites >2 variants
+    combine_chromosomes: combine vcf files for individual chromosomes unto a single vcf
+    fill_tags: add info about MAF, HWE, etc.
+    get_gene_positions: extract coordinates of genes from gtf file
+    filter_counts: filter low expression genes and remove excluded samples from count matrix
+    select_samples: exclude sample from vcf and make sure order is the same as the counts file
+    filter_tags: filter SNPs based on info added by filter_counts rule
+    tabix_genotypes: run tabix on final vcf file (not sure if this will work on bcf, or if I need to convert to vcf.gz)
+    plink_import: create (plink) bed file from vcf for PCA analysis
+    plink_ld_prune: LD pruning analysis on plink-formatted genotype data
+    plink_pca: PCA analysis on LD-pruned plink-formatted genotype data
+    peer: PEER analysis on count data, using cofactors and PCA results
+    make_bed: convert PEER residuals to BED file that can be used as input for FastQTL
+    tabix_counts: index BED file of residualised counts
+    fast_qtl: run permutation analysis on each chunk of genome (not sure if I also need to calculate nominal p-values)
+    cat_eqtl: concatinate fast_qtl output
 
+Todo:
+- need to double-check what nonSNP files actually check for. I knew at one point, but I can't remember
+- need to run fill_tags rule on vcf with extra samples removed. I'm currently running the filtering after excluding samples, but using stats calculated before using rules.make_bed.output, rather than rules.filter_counts.output
+- while I'm at it, it would actually make sense to use the final residualised counts table rather than the raw counts file
+- add genotyping run as cofactor
+- add rules for downstream analyses from FastQTL permutations (I think there's an R script for this)
+"""
 rule all:
     input:
-       "FastQTL/permutations.default.txt.gz"
+       "FastQTL/permutations.all.txt.gz"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -171,27 +203,6 @@ rule fill_tags:
     shell:
         "bcftools +fill-tags {input} -Ob -o {output}"
 
-rule plink_filter:
-    input:
-        "Genotypes/Combined/combined.bcf"
-    output:
-        "Genotypes/Plink/genotypes.bed"
-    params:
-        prefix = "Genotypes/Plink/genotypes",         
-    shell:
-        "plink --bcf {input} --double-id --maf .05 --hwe .0001 --make-bed --out {params.prefix}"
-
-rule plink_recode:
-    input:
-        "Genotypes/Combined/combined.bcf"
-    output:
-        "Genotypes/Plink/recoded.traw",
-        "Genotypes/Plink/recoded.log"
-    params:
-        prefix = "Genotypes/Plink/recoded",
-    shell:
-        "plink --bcf {input} --double-id --maf .05 --hwe .0001 --recode A-transpose --out {params.prefix}"
-
 rule get_gene_positions:
     input:
         gtf=config["reference"]["gtf"]
@@ -238,6 +249,14 @@ rule filter_tags:
     shell:
         "bcftools view -e'MAF<{params.maf} || HWE<{params.hwe} || R2<{params.r2}' {input} -Ob -o {output}"
 
+rule tabix_genotypes:
+    input:
+        rules.filter_tags.output
+    output:
+        "Genotypes/Combined/combined_filtered.tbi"
+    shell:
+        "tabix {input}"
+
 rule plink_import:
     input:
         rules.filter_tags.output
@@ -276,10 +295,10 @@ rule peer:
         pca=rules.plink_pca.output,
         counts = rules.filter_counts.output
     output:
-        "Peer/factors.txt"
+        "Peer/residuals.txt"
     params:
         sample_info=config["sample_info"],
-        residuals = "Peer/residuals.txt",
+        factors = "Peer/factors.txt",
         alpha = "Peer/alpha.txt",
         num_peer = 10
     log:
@@ -289,21 +308,53 @@ rule peer:
     shell:
         "(Rscript /c8000xd3/rnaseq-heath/GENEX-FB2/R/PEER.R -p {input.pca} "
         "-n {params.num_peer} -c {input.counts} -b {params.sample_info} "
-        "-r {params.residuals} -o {output} -a {params.alpha}) > {log}"
+        "-r {output} -f {params.factors} -a {params.alpha}) > {log}"
 
+rule make_bed:
+    input:
+        gene_counts=rules.peer.output,
+        geneloc="Data/geneloc.txt"
+    output:
+        "Data/expression_residuals.bed"
+    params:
+        min=0,
+        num=0
+    shell:
+        "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
+        "--min {params.min} --num {params.num} --out {output}"
+
+rule tabix_counts:
+    input:
+        rules.make_bed.output
+    output:
+        "Peer/expression_residuals.tbi"
+    shell:
+        "tabix {input}"
+        
 rule fast_qtl:
     input:
-        counts = rules.filter_counts.output,
+        counts = rules.make_bed.output,
+        counts_index = rules.tabix_counts.output,
         genotypes = rules.filter_tags.output,
-        covariates = rules.peer.output
+        genotype_index = rules.tabix_genotypes.output
     output:
-        "FastQTL/permutations.default.txt.gz"
+        "FastQTL/permutations.{chunk}.txt.gz"
     params:
         min = 1000,
-        max = 10000
+        max = 10000,
+        chunk = "{chunk}",
+        num_chunks = 10
     log:
-        "Logs/FastQTL/fastQTL.txt"
+        "Logs/FastQTL/fastQTL_{chunk}.txt"
     shell:
         "src/FastQTL-2.165.linux/bin/fastQTL.1.165.linux --vcf {input.genotypes} "
-        " --bed {input.counts} --cov {input.covariates} --chunk "
+        " --bed {input.counts} --chunk {params.chunk} {params.num_chunks}"
         " --permute {params.min} {params.max} --out {output} -- log {log}"
+
+rule cat_eqtls:
+    input:
+        expand("FastQTL/permutations.{chunk}.txt.gz", chunk=range(1,10))
+    output:
+        "FastQTL/permutations.all.txt.gz"
+    shell:
+        "zcat {input} | gzip -c > {output}"

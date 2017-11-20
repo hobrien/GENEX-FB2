@@ -19,7 +19,7 @@ option_list <- list(
               help="Outfile for residuals of expression data"),
   make_option(c("-a", "--alpha"), type="character", default="../examples/brem_data/alpha.txt", 
               help="Outfile for alpha values of PEER factors"),
-  make_option(c("-o", "--out"), type="character", default="../examples/brem_data/factors.txt", 
+  make_option(c("-f", "--factors"), type="character", default="../examples/brem_data/factors.txt", 
               help="Outfile for PEER factors"),
   make_option(c("-e", "--exclude"), type="character", default='', 
               help="IDs of samples to exclude")
@@ -92,8 +92,8 @@ residuals %>% write_tsv(opt$residuals)
 
 factors <- PEER_getX(model) %>% as_tibble()
 factors$ID <- colnames(pheno[,-1])
-factors <- dplyr::select(factors, ID, everything()) 
-factors %>% write_tsv(opt$out)
+factors <- dplyr::select(factors, ID, everything())
+factors %>% write_tsv(opt$factors)
 
 alpha <- PEER_getAlpha(model) %>% as_tibble()
 alpha$factor <- colnames(factors[,-1])
