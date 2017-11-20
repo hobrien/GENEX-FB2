@@ -9,7 +9,7 @@ configfile: "config.yaml"
 rule all:
     input:
         "Peer/residuals.txt",
-        "Genotypes/Combined/combined_inc_samples.bcf"
+        "Genotypes/Combined/combined_filtered.bcf"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -189,18 +189,6 @@ rule fill_tags:
     shell:
         "bcftools +fill-tags {input} -Ob -o {output}"
 
-rule filter_tags:
-    input:
-        rules.fill_tags.output
-    output:
-        "Genotypes/Combined/combined_filtered.bcf"
-    params:
-        maf=.05,
-        hwe=.0001,
-        r2=.6
-    shell:
-        "bcftools view -e'MAF<{params.maf} || HWE<{params.hwe} || R2<{params.r2}' {input} -Ob -o {output}"
-        
 rule plink_filter:
     input:
         "Genotypes/Combined/combined.bcf"
@@ -289,14 +277,26 @@ rule filter_counts:
 rule select_samples:
     input:
         expression=rules.filter_counts.output,
-        vcf=rules.filter_tags.output
+        vcf=rules.fill_tags.output
     output:
         "Genotypes/Combined/combined_inc_samples.bcf"
     params:
         min=6
     shell:
-        "bcftools view -s `head -1 {input.expression} | cut --complement -f 1-4 | perl -pe 's/\t/,/g'` "
+        "bcftools view -s `head -1 {input.expression} | cut --complement -f 1-4 | perl -pe 's/\s+/,/g'` "
         "{input.vcf} -Ob -o {output} "
+
+rule filter_tags:
+    input:
+        rules.select_samples.output
+    output:
+        "Genotypes/Combined/combined_filtered.bcf"
+    params:
+        maf=.05,
+        hwe=.0001,
+        r2=.6
+    shell:
+        "bcftools view -e'MAF<{params.maf} || HWE<{params.hwe} || R2<{params.r2}' {input} -Ob -o {output}"
         
 rule matrix_eqtl:
     input:
