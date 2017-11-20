@@ -8,7 +8,7 @@ configfile: "config.yaml"
 
 rule all:
     input:
-       "Peer/factors.txt"
+       "FastQTL/permutations.default.txt.gz"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -307,22 +307,17 @@ rule peer:
         "-n {params.num_peer} -c {input.counts} -b {params.sample_info} "
         "-r {params.residuals} -o {output} -a {params.alpha}) > {log}"
 
-rule matrix_eqtl:
+rule fast_qtl:
     input:
-        genotypes="Genotypes/Plink/recoded.traw",
-        snp_pos="Genotypes/Plink/genotypes.map",
-        gene_counts=config["count_data"],
-        gene_loc="Data/geneloc.txt",
-        sample_info=config["sample_info"]
+        counts = rules.filter_counts.output,
+        genotypes = rules.filter_tags.output,
+        covariates = rules.peer.output
     output:
-        image="MatrixEQTL/results.RData"
+        "FastQTL/permutations.default.txt.gz"
     params:
-        cis="MatrixEQTL/cis_eqtl.txt",
-        trans="MatrixEQTL/trans_eqtl.txt",
-    log:
-        "Logs/MatrixEQTL/matrix_eqtl.txt"
+        min = 1000,
+        max = 10000
     shell:
-        "(Rscript R/MatrixEQTL.R  --genotypes {input.genotypes} "
-        "--counts {input.gene_counts} --snps {input.snp_pos} --genes {input.gene_loc} "
-        "--cofactors {input.sample_info} --cis {params.cis} "
-        "--trans {params.trans} --image {output.image}) 2> {log}"
+        "fastQTL --vcf {input.genptypes} --bed {input.counts} {output} "
+        "--region 22:17000000-18000000 --permute {params.min} {params.max} " 
+        "--out permutations.default.txt.gz"
