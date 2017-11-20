@@ -16,31 +16,28 @@ rules:
     excluded_sites: list non variable sites (?)/ sites >2 variants for exclusion
     filter_dup: remove non variable sites (?)/ sites >2 variants
     combine_chromosomes: combine vcf files for individual chromosomes unto a single vcf
-    fill_tags: add info about MAF, HWE, etc.
     get_gene_positions: extract coordinates of genes from gtf file
     filter_counts: filter low expression genes and remove excluded samples from count matrix
-    select_samples: exclude sample from vcf and make sure order is the same as the counts file
-    filter_tags: filter SNPs based on info added by filter_counts rule
-    tabix_genotypes: run tabix on final vcf file (not sure if this will work on bcf, or if I need to convert to vcf.gz)
     plink_import: create (plink) bed file from vcf for PCA analysis
     plink_ld_prune: LD pruning analysis on plink-formatted genotype data
     plink_pca: PCA analysis on LD-pruned plink-formatted genotype data
     peer: PEER analysis on count data, using cofactors and PCA results
     make_bed: convert PEER residuals to BED file that can be used as input for FastQTL
-    tabix_counts: index BED file of residualised counts
+    index_counts: index BED file of residualised counts
+    select_samples: exclude sample from vcf and make sure order is the same as the counts file
+    filter_tags: add info about MAF, HWE, etc. and filter SNPs
     fast_qtl: run permutation analysis on each chunk of genome (not sure if I also need to calculate nominal p-values)
     cat_eqtl: concatinate fast_qtl output
+    q_values: calculate FDR for each eQTL
 
 Todo:
 - need to double-check what nonSNP files actually check for. I knew at one point, but I can't remember
-- need to run fill_tags rule on vcf with extra samples removed. I'm currently running the filtering after excluding samples, but using stats calculated before using rules.make_bed.output, rather than rules.filter_counts.output
-- while I'm at it, it would actually make sense to use the final residualised counts table rather than the raw counts file
-- add genotyping run as cofactor
+- add genotyping run as cofactor?
 - add rules for downstream analyses from FastQTL permutations (I think there's an R script for this)
 """
 rule all:
     input:
-       "FastQTL/permutations.all.txt.gz"
+       "FastQTL/results.txt"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -195,14 +192,6 @@ rule combine_chromosomes:
     shell:
         "(bcftools concat -Ob -o {output} {input}) 2> {log}"
 
-rule fill_tags:
-    input:
-        rules.combine_chromosomes.output
-    output:
-        "Genotypes/Combined/combined_tags.bcf"
-    shell:
-        "bcftools +fill-tags {input} -Ob -o {output}"
-
 rule get_gene_positions:
     input:
         gtf=config["reference"]["gtf"]
@@ -224,38 +213,6 @@ rule filter_counts:
     shell:
         "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
         "--min {params.min} --num {params.num} --out {output} --exclude {params.excluded}"
-
-rule select_samples:
-    input:
-        expression=rules.filter_counts.output,
-        vcf=rules.fill_tags.output
-    output:
-        "Genotypes/Combined/combined_inc_samples.bcf"
-    params:
-        min=6
-    shell:
-        "bcftools view -s `head -1 {input.expression} | cut --complement -f 1-4 | perl -pe 's/\s+(?!$)/,/g'` "
-        "{input.vcf} -Ob -o {output} "
-
-rule filter_tags:
-    input:
-        rules.select_samples.output
-    output:
-        "Genotypes/Combined/combined_filtered.bcf"
-    params:
-        maf=.05,
-        hwe=.0001,
-        r2=.8
-    shell:
-        "bcftools view -e'MAF<{params.maf} || HWE<{params.hwe} || R2<{params.r2}' {input} -Ob -o {output}"
-
-rule tabix_genotypes:
-    input:
-        rules.filter_tags.output
-    output:
-        "Genotypes/Combined/combined_filtered.tbi"
-    shell:
-        "tabix {input}"
 
 rule plink_import:
     input:
@@ -323,20 +280,41 @@ rule make_bed:
         "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
         "--min {params.min} --num {params.num} --out {output}"
 
-rule tabix_counts:
+rule index_counts:
     input:
         rules.make_bed.output
     output:
-        "Peer/expression_residuals.tbi"
+        "Data/expression_residuals.bed.gz"
     shell:
-        "tabix {input}"
-        
+        "bgzip {input} && tabix -p bed {output}" # this looks a bit awkward, but it gives the index for free
+
+rule select_samples:
+    input:
+        expression=rules.make_bed.output,
+        vcf=rules.fill_tags.output
+    output:
+        "Genotypes/Combined/combined_inc_samples.bcf"
+    shell:
+        "bcftools view -s `head -1 {input.expression} | cut --complement -f 1-4 | perl -pe 's/\s+(?!$)/,/g'` "
+        "{input.vcf} -Ob -o {output} "
+
+rule filter_tags:
+    input:
+        rules.select_samples.output
+    output:
+        "Genotypes/Combined/combined_filtered.vcf.gz"
+    params:
+        maf=.05,
+        hwe=.0001,
+        r2=.8
+    shell:
+        "bcftools +fill-tags {input} -Ou | bcftools view -e'MAF<{params.maf} || "
+        "HWE<{params.hwe} || R2<{params.r2}' - -Oz -o {output} && tabix -p vcf {output}"
+
 rule fast_qtl:
     input:
-        counts = rules.make_bed.output,
-        counts_index = rules.tabix_counts.output,
-        genotypes = rules.filter_tags.output,
-        genotype_index = rules.tabix_genotypes.output
+        counts = rules.index_counts.output,
+        genotypes = rules.filter_tags.output
     output:
         "FastQTL/permutations.{chunk}.txt.gz"
     params:
@@ -358,3 +336,22 @@ rule cat_eqtls:
         "FastQTL/permutations.all.txt.gz"
     shell:
         "zcat {input} | gzip -c > {output}"
+
+rule cat_eqtls:
+    input:
+        expand("FastQTL/permutations.{chunk}.txt.gz", chunk=range(1,10))
+    output:
+        "FastQTL/permutations.all.txt.gz"
+    shell:
+        "zcat {input} | gzip -c > {output}"
+
+rule q_values:
+    input:
+        rules.cat_eqtls.output
+    output:
+        "FastQTL/results.txt"
+    params:
+        fdr=.05
+    shell:
+        "Rscript ~/src/FastQTL-2.165.linux/scripts/calulateNominalPvalueThresholds.R "
+        "{input} {output} {parmas.fdr}"
