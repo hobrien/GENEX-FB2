@@ -252,7 +252,7 @@ rule peer:
         alpha = "Peer/alpha.txt",
         counts = "Data/counts_vst.txt",
         num_peer = 25,
-        excluded = "17046,16385,17048,16024,16115"
+        excluded = "17046,16385,17048,16024,16115,11449"
     log:
         "Logs/PEER/peer.txt"
     conda:
@@ -269,10 +269,11 @@ rule filter_counts:
     output:
         "Data/expression.bed"
     params:
-        min=6
+        min=6,
+        excluded = "17046,16385,17048,16024,16115,11449"
     shell:
         "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
-        "--min {params.min} --average --out {output}"
+        "--min {params.min} --average --out {output} --exclude {params.excluded}"
 
 rule select_samples:
     input:
