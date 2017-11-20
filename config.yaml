@@ -7,6 +7,6 @@ reference:
     rsID: /c8000xd3/rnaseq-heath/Ref/Homo_sapiens/hg19/All_20161121.vcf.gz
     gtf: /c8000xd3/rnaseq-heath/Ref/Homo_sapiens/GRCh38/NCBI/GRCh38Decoy/Annotation/Genes.gencode/genes.gtf
 count_data:
-    Data/MalevsFemale.complete.txt
+    Data/counts_vst.txt
 sample_info: Data/SampleInfo.txt
 genotyping_info: Data/GenotypingInfo.txt
