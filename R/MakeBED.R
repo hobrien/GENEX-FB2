@@ -1,6 +1,7 @@
 #setwd("~/BTSync/FetalRNAseq/Github/GENEX-FB2/")
 
-library(tidyverse)
+library(readr)
+library(dplyr)
 library(stringr)
 library("optparse")
 
