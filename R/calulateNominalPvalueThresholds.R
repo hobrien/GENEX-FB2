@@ -9,8 +9,7 @@ cat("Processing fastQTL concatenated output [", ifile, "] controlling for FDR ="
 
 #Read data
 D = read.table(ifile, hea=FALSE, stringsAsFactors=FALSE)
-colnames(D) <- c("geneID", "cisVariants", "Beta1", "Beta2", "Dummy", "topSNP", 
-                 "distance", "nominal_p", "corrected_p_direct", "corrected_p_beta")
+
 D = D[which(!is.na(D[, 10])),]
 cat("  * Number of molecular phenotypes =" , nrow(D), "\n")
 cat("  * Correlation between Beta approx. and Empirical p-values =", round(cor(D[, 9], D[, 10]), 4), "\n")
