@@ -23,10 +23,11 @@ rules:
     filter_counts: filter low expression genes and remove excluded samples from count matrix
     peer: PEER analysis on count data, using cofactors and PCA results
     make_bed: convert PEER residuals to BED file that can be used as input for FastQTL
+    bgzip_counts: compress BED file of residualised counts
     index_counts: index BED file of residualised counts
     select_samples: exclude sample from vcf and make sure order is the same as the counts file
     filter_tags: add info about MAF, HWE, etc. and filter SNPs
-    rename_chromosomes: change chromosome names from 1,2,3,etc to chr1,chr2, etc. (this could be combined with rule above)
+    tabix_vcf: index final vcf file
     fast_qtl: run permutation analysis on each chunk of genome (not sure if I also need to calculate nominal p-values)
     cat_eqtl: concatinate fast_qtl output
     q_values: calculate FDR for each eQTL
@@ -34,13 +35,14 @@ rules:
 Todo:
 - need to double-check what nonSNP files actually check for. I knew at one point, but I can't remember
 - add genotyping run as cofactor?
-- figure out why FastQTL keeps complaining that the tabix index files are older than the bed/vcf (I've just redone it manually for now)
-
+- reduce memory for FastQTL to 1GB
 Notes
-- FastQTL runs on chunk1/1000 in just under 1 min (max vmem is 150MB)
-- If things increase linearly, which seems reasonable, if I use 100 chunks, each will run in 90 min with 1.5 GB memory
 - I'm currently limiting things to 20 simultaneous jobs (tho I could probably go higher)
-- In principle, that means the job should take 5 * 1.5 = 7.5 hrs (technically 56*100*5/60/60=7.8)
+    - each chunk is taking 15 min (and 620MB VMEM), meaning the job should take 15*100/20/60 = 1.25 hrs
+- I've removed chrX and chrY from the expression data because they are not in the vcf
+- This probably means re-running PEER because that will change things somewhat
+- For now, I'm just going to modify the residuals file, but I will eventually have to modify the original vst counts file
+- bgzip ... && tabix doesn't work because the index ends up being older than the file therefor I'm making separate rules for indexing
 """
 rule all:
     input:
@@ -287,14 +289,22 @@ rule make_bed:
         "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
         "--min {params.min} --num {params.num} --out {output}"
 
-rule index_counts:
+rule bgzip_counts:
     input:
         rules.make_bed.output
     output:
         "Data/expression_residuals.bed.gz"
     shell:
-        "bgzip {input} && tabix -p bed {output}" # this looks a bit awkward, but it gives the index for free
+        "bgzip {input}"
 
+rule index_counts:
+    input:
+        rules.bgzip_counts.output
+    output:
+        "Data/expression_residuals.bed.gz.tbi"
+    shell:
+        "tabix -p bed {input}"
+        
 rule select_samples:
     input:
         expression=rules.make_bed.output,
@@ -317,22 +327,21 @@ rule filter_tags:
     shell:
         "bcftools +fill-tags {input} -Ou | bcftools view -e'MAF<{params.maf} || "
         "HWE<{params.hwe} || R2<{params.r2}' -Ou - | bcftools sort -Oz -o {output} - "
-        "&& tabix -p vcf {output}"
 
-rule rename_chromosomes:
+rule tabix_vcf:
     input:
         rules.filter_tags.output
     output:
-        "Genotypes/Combined/combined_filtered_renamed.vcf.gz"
-    params:
-        map = "Data/chr_map.txt"
+        "Genotypes/Combined/combined_filtered.vcf.gz.tbi"
     shell:
-        "bcftools annotate --rename-chrs {params.map} -Oz -o {output} {input} && tabix -p vcf {output}"
+        "tabix -p vcf {input}"
 
 rule fast_qtl:
     input:
-        counts = rules.index_counts.output,
-        genotypes = rules.rename_chromosomes.output
+        counts = rules.bgzip_counts.output,
+        count_index = rules.index_counts.output,
+        genotypes = rules.filter_tags.output,
+        genotype_index = rules.tabix_vcf.output
     output:
         "FastQTL/permutations.{chunk}.txt.gz"
     params:
@@ -349,7 +358,7 @@ rule fast_qtl:
 
 rule cat_eqtls:
     input:
-        expand("FastQTL/permutations.{chunk}.txt.gz", chunk=range(1,11))
+        expand("FastQTL/permutations.{chunk}.txt.gz", chunk=range(1,101))
     output:
         "FastQTL/permutations.all.txt.gz"
     shell:
