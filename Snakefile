@@ -16,16 +16,17 @@ rules:
     excluded_sites: list non variable sites (?)/ sites >2 variants for exclusion
     filter_dup: remove non variable sites (?)/ sites >2 variants
     combine_chromosomes: combine vcf files for individual chromosomes unto a single vcf
-    get_gene_positions: extract coordinates of genes from gtf file
-    filter_counts: filter low expression genes and remove excluded samples from count matrix
     plink_import: create (plink) bed file from vcf for PCA analysis
     plink_ld_prune: LD pruning analysis on plink-formatted genotype data
     plink_pca: PCA analysis on LD-pruned plink-formatted genotype data
+    get_gene_positions: extract coordinates of genes from gtf file
+    filter_counts: filter low expression genes and remove excluded samples from count matrix
     peer: PEER analysis on count data, using cofactors and PCA results
     make_bed: convert PEER residuals to BED file that can be used as input for FastQTL
     index_counts: index BED file of residualised counts
     select_samples: exclude sample from vcf and make sure order is the same as the counts file
     filter_tags: add info about MAF, HWE, etc. and filter SNPs
+    rename_chromosomes: change chromosome names from 1,2,3,etc to chr1,chr2, etc. (this could be combined with rule above)
     fast_qtl: run permutation analysis on each chunk of genome (not sure if I also need to calculate nominal p-values)
     cat_eqtl: concatinate fast_qtl output
     q_values: calculate FDR for each eQTL
@@ -33,7 +34,13 @@ rules:
 Todo:
 - need to double-check what nonSNP files actually check for. I knew at one point, but I can't remember
 - add genotyping run as cofactor?
-- add rules for downstream analyses from FastQTL permutations (I think there's an R script for this)
+- figure out why FastQTL keeps complaining that the tabix index files are older than the bed/vcf (I've just redone it manually for now)
+
+Notes
+- FastQTL runs on chunk1/1000 in just under 1 min (max vmem is 150MB)
+- If things increase linearly, which seems reasonable, if I use 100 chunks, each will run in 90 min with 1.5 GB memory
+- I'm currently limiting things to 20 simultaneous jobs (tho I could probably go higher)
+- In principle, that means the job should take 5 * 1.5 = 7.5 hrs (technically 56*100*5/60/60=7.8)
 """
 rule all:
     input:
@@ -291,7 +298,7 @@ rule index_counts:
 rule select_samples:
     input:
         expression=rules.make_bed.output,
-        vcf=rules.fill_tags.output
+        vcf=rules.combine_chromosomes.output
     output:
         "Genotypes/Combined/combined_inc_samples.bcf"
     shell:
@@ -309,37 +316,40 @@ rule filter_tags:
         r2=.8
     shell:
         "bcftools +fill-tags {input} -Ou | bcftools view -e'MAF<{params.maf} || "
-        "HWE<{params.hwe} || R2<{params.r2}' - -Oz -o {output} && tabix -p vcf {output}"
+        "HWE<{params.hwe} || R2<{params.r2}' -Ou - | bcftools sort -Oz -o {output} - "
+        "&& tabix -p vcf {output}"
+
+rule rename_chromosomes:
+    input:
+        rules.filter_tags.output
+    output:
+        "Genotypes/Combined/combined_filtered_renamed.vcf.gz"
+    params:
+        map = "Data/chr_map.txt"
+    shell:
+        "bcftools annotate --rename-chrs {params.map} -Oz -o {output} {input} && tabix -p vcf {output}"
 
 rule fast_qtl:
     input:
         counts = rules.index_counts.output,
-        genotypes = rules.filter_tags.output
+        genotypes = rules.rename_chromosomes.output
     output:
         "FastQTL/permutations.{chunk}.txt.gz"
     params:
         min = 1000,
         max = 10000,
         chunk = "{chunk}",
-        num_chunks = 10
+        num_chunks = 100
     log:
         "Logs/FastQTL/fastQTL_{chunk}.txt"
     shell:
-        "src/FastQTL-2.165.linux/bin/fastQTL.1.165.linux --vcf {input.genotypes} "
+        "~/src/FastQTL-2.165.linux/bin/fastQTL.1.165.linux --vcf {input.genotypes} "
         " --bed {input.counts} --chunk {params.chunk} {params.num_chunks}"
         " --permute {params.min} {params.max} --out {output} -- log {log}"
 
 rule cat_eqtls:
     input:
-        expand("FastQTL/permutations.{chunk}.txt.gz", chunk=range(1,10))
-    output:
-        "FastQTL/permutations.all.txt.gz"
-    shell:
-        "zcat {input} | gzip -c > {output}"
-
-rule cat_eqtls:
-    input:
-        expand("FastQTL/permutations.{chunk}.txt.gz", chunk=range(1,10))
+        expand("FastQTL/permutations.{chunk}.txt.gz", chunk=range(1,11))
     output:
         "FastQTL/permutations.all.txt.gz"
     shell:
@@ -354,4 +364,4 @@ rule q_values:
         fdr=.05
     shell:
         "Rscript ~/src/FastQTL-2.165.linux/scripts/calulateNominalPvalueThresholds.R "
-        "{input} {output} {parmas.fdr}"
+        "{input} {params.fdr} {output}"
