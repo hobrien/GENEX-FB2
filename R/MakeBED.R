@@ -40,7 +40,7 @@ genepos <- read_delim(opt$genes, " ", col_names = c("id", "chr", "s1", "s2"), es
 genepos <- genepos %>% mutate(id= str_replace(id, '(ENSG\\d+)\\.\\d+', '\\1')) %>% 
   inner_join(counts, by=c("id" = 'ID')) %>%
   filter(chr %in% paste0('chr', seq(22))) %>%
-  mutate(chr=str_replace('chr', '', chr))
+  mutate(chr=str_replace(chr, 'chr', '')) %>%
   select(`#Chr`=chr, start=s1, end=s2, ID=id, everything())
 
 write_tsv(genepos, opt$out)
