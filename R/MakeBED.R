@@ -26,6 +26,7 @@ exclude <- strsplit(opt$exclude, ',')[[1]]
 # Import normalised counts
 print(paste("reading", opt$counts))
 counts <- read_delim(opt$counts, "\t", escape_double = FALSE, trim_ws = TRUE)
+colnames(counts)[1]<-"ID" #make sure ID column is consistently named
 counts<-select(counts, -one_of(exclude))
 
 if (opt$average){
@@ -37,7 +38,7 @@ if (opt$average){
 print(paste("reading", opt$genes))
 genepos <- read_delim(opt$genes, " ", col_names = c("id", "chr", "s1", "s2"), escape_double = FALSE, trim_ws = TRUE)
 genepos <- genepos %>% mutate(id= str_replace(id, '(ENSG\\d+)\\.\\d+', '\\1')) %>% 
-  inner_join(counts, by=c("id" = 'Id')) %>%
+  inner_join(counts, by=c("id" = 'ID')) %>%
   filter(chr %in% paste0('chr', c(seq(22), 'X', 'Y'))) %>%
   select(`#Chr`=chr, start=s1, end=s2, ID=id, everything())
 
