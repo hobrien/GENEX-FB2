@@ -382,5 +382,4 @@ rule q_values:
     params:
         fdr=.05
     shell:
-        "Rscript ~/src/FastQTL-2.165.linux/scripts/calulateNominalPvalueThresholds.R "
-        "{input.eqtls} {input.snp_pos} {params.fdr} {output}"
+        "Rscript R/calulateNominalPvalueThresholds.R {input.eqtls} {input.snp_pos} {params.fdr} {output}"
