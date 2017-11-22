@@ -32,7 +32,7 @@ cat("  * Corrected p-value threshold = ", pthreshold, "\n")
 D$nthresholds = qbeta(pthreshold, D$V3, D$V4, ncp = 0, lower.tail = TRUE, log.p = FALSE)
 
 colnames(D) <- c("geneID", "cisVariants", "Beta1", "Beta2", "Dummy", "topSNP", 
-                 "distance", "pvalue", "padj_direct", "padj_beta", "padj", "nominal_p_threshold")
+                 "distance", "pvalue", "nominal_p", "padj_beta", "qvalue", "nominal_p_threshold")
 # Add SNP positions
 snp_pos <- read_tsv(args[2], col_names=FALSE)
 
