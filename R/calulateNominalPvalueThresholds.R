@@ -1,9 +1,12 @@
 suppressMessages(library(qvalue))
+library(readr)
+library(dplyr)
 
 args <- commandArgs(trailingOnly = TRUE)
 
 ifile = args[1]
-fdr = as.numeric(args[2]);
+snp_file = args[2]
+fdr = as.numeric(args[3]);
 
 cat("Processing fastQTL concatenated output [", ifile, "] controlling for FDR =", fdr * 100, "%\n");
 
@@ -29,8 +32,15 @@ cat("  * Corrected p-value threshold = ", pthreshold, "\n")
 D$nthresholds = qbeta(pthreshold, D$V3, D$V4, ncp = 0, lower.tail = TRUE, log.p = FALSE)
 
 colnames(D) <- c("geneID", "cisVariants", "Beta1", "Beta2", "Dummy", "topSNP", 
-                 "distance", "nominal_p", "padj_direct", "padj_beta", "qval", "nominal_p_threshold")
+                 "distance", "pvalue", "padj_direct", "padj_beta", "padj", "nominal_p_threshold")
+# Add SNP positions
+snp_pos <- read_tsv(args[2], col_names=FALSE)
+
+mutate(snp_pos, pos = paste(X1, X2, sep='|')) %>%
+  select(topSNP=X3, pos)
+D <- left_join(D, snp_pos)
+
 #Write output
-write.table(D[, c(1,2,3,4,6,7,8,12,9,10,11)], args[3], quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(D[, c(1,2,3,4,6,7,8,12,9,10,11,13)], args[4], quote=FALSE, row.names=FALSE, col.names=TRUE)
 
 cat("Done\n")
