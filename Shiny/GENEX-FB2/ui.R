@@ -17,7 +17,7 @@ navbarPage("Gene Expression in the Fetal Brain: EQTL:",
             tabPanel("Cis eQTLs",
                      sidebarLayout(
                        sidebarPanel(
-                         radioButtons("p_type", "Maximum p-value", c('Uncorrected p-values' = 'pvalue', 'FDR corrected p-values (q-values)'= 'padj'), selected = 'padj', inline = FALSE,
+                         radioButtons("p_type", "Maximum p-value", c('Uncorrected p-values' = 'nominal_p', 'FDR corrected p-values (q-values)'= 'qvalue'), selected = 'padj', inline = FALSE,
                                       width = NULL),
                          sliderInput("pvalue", textOutput("SciNotation"), 
                                      min = -80, max = -2, value = -10),
