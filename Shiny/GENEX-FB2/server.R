@@ -82,6 +82,9 @@ shinyServer(function(input, output) {
     paste0("p-value: ", 10^input$pvalue)
   })
   output$eQTLplotTop <- renderPlot({
+    validate(
+      need(input$TopCisTable_rows_selected != "", "Please select a row from the table")
+    )
     PlotEQTL(input$TopCisTable_rows_selected, counts, top_cis[top_cis[, input$p_type] < 10^input$pvalue, ], target, snp_header)
   })
   output$TopCisTable <- DT::renderDataTable({

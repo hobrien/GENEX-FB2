@@ -8,7 +8,7 @@
 #
 
 library(shiny)
-
+library(shinyBS)
 
 # Application title
 #titlePanel("Gene Expression in the Fetal Brain: Sex Biases"),
@@ -23,13 +23,15 @@ navbarPage("Gene Expression in the Fetal Brain: EQTL:",
                                      min = -80, max = -2, value = -10),
                          conditionalPanel(
                            'input.dataset === "Top Cis"',
-                           plotOutput("eQTLplotTop", height=200)
+                           HTML("<strong>Select row to plot data</strong><br>"),
+                           actionButton("PlotToCis", "Plot")
                          )
                         ),
                        mainPanel(
                          tabsetPanel(
                            id = 'dataset',
-                           tabPanel('Top Cis', DT::dataTableOutput('TopCisTable'))
+                           tabPanel('Top Cis', DT::dataTableOutput('TopCisTable')),
+                           bsModal("ToCisPlot", "Top Cis eQTL", "PlotToCis", size = "large",plotOutput("eQTLplotTop"))
                          )   
                        )
                        
