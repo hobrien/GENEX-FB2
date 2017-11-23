@@ -26,7 +26,8 @@ counts <- read_delim("./Data/counts.txt", "\t", escape_double = FALSE, trim_ws =
 
 colnames(counts) <- str_replace_all(colnames(counts), 'norm.', '')
 
-top_cis <- read_delim("./Data/cis_eqtl.txt", " ", escape_double = FALSE, trim_ws = TRUE, col_types = cols(pos='c'))
+top_cis <- read_delim("./Data/cis_eqtl.txt", " ", escape_double = FALSE, trim_ws = TRUE, col_types = cols(pos='c')) %>%
+  select(-one_of(c('cisVariants', 'Beta1', 'Beta2', 'nominal_p_threshold', 'padj_direct', 'padj_beta')))
 
 target <- read_delim("./Data/SampleInfo.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   mutate(Sample=as.character(Sample))
