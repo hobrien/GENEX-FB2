@@ -34,13 +34,6 @@ target <- read_delim("./Data/SampleInfo.txt", "\t", escape_double = FALSE, trim_
 snp_header <- system("bcftools view -h ./Data/combined_filtered.vcf.gz | tail -1", intern=TRUE) %>%
   str_split('\t')
 
-get_density <- function(x, y, n = 100) {
-  dens <- MASS::kde2d(x = x, y = y, n = n)
-  ix <- findInterval(x, dens$x)
-  iy <- findInterval(y, dens$y)
-  ii <- cbind(ix, iy)
-  return(dens$z[ii])
-}
 
 PlotEQTL<-function(row_num, counts, cis, target, snp_header) {
   qtl_stats <- cis[row_num,]
@@ -60,7 +53,7 @@ PlotEQTL<-function(row_num, counts, cis, target, snp_header) {
     separate(geno, c("GT", "DS", "GP" ), sep=":") %>%
     full_join(expression) %>%
     filter(!is.na(GT)) %>%
-    mutate(DS=as.numeric(DS), density=get_density(value, DS), 
+    mutate(DS=as.numeric(DS), 
            geno=factor(ifelse(GT=='0|0', paste0(UQ(ref), UQ(ref)),
                        ifelse(GT=='1|1', paste0(UQ(alt), UQ(alt)),
                               paste0(UQ(ref), UQ(alt)))),
