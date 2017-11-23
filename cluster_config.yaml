@@ -1,9 +1,9 @@
 __default__:
     num_cores: 1
     maxvmem: 4G
-matrix_eqtl:
+fast_qtl:
     num_cores: 1
-    maxvmem: 40G
+    maxvmem: 2G
 peer:
     num_cores: 1
     maxvmem: 30G
