@@ -29,14 +29,15 @@ rules:
     filter_tags: add info about MAF, HWE, etc. and filter SNPs
     snp_positions: extract genomic coordinates for each SNP (to be associated with eQTLs in q_values rule)
     tabix_vcf: index final vcf file
-    fast_qtl: run permutation analysis on each chunk of genome (not sure if I also need to calculate nominal p-values)
-    cat_eqtl: concatinate fast_qtl output
+    fast_qtl: run fast_qtl on each chunk of genome (calculate nominal p-values for all SNPs)
+    cat_fast_qtl: concatinate fast_qtl nominal pass output
+    fast_qtl_permutations: run permutation analysis on each chunk of genome (corrected p-values for top SNPs)
+    cat_permutations: concatinate fast_qtl permutation pass output
     q_values: calculate FDR for each eQTL
 
 Todo:
 - need to double-check what nonSNP files actually check for. I knew at one point, but I can't remember
 - add genotyping run as cofactor?
-- reduce memory for FastQTL to 1GB
 Notes
 - I'm currently limiting things to 20 simultaneous jobs (tho I could probably go higher)
     - each chunk is taking 15 min (and 620MB VMEM), meaning the job should take 15*100/20/60 = 1.25 hrs
@@ -47,7 +48,8 @@ Notes
 """
 rule all:
     input:
-       "FastQTL/results.txt"
+       "FastQTL/results.txt",
+       "FastQTL/FastQTL.all.txt.gz"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -352,6 +354,34 @@ rule fast_qtl:
         genotypes = rules.filter_tags.output,
         genotype_index = rules.tabix_vcf.output
     output:
+        "FastQTL/fastQTL.{chunk}.txt.gz"
+    params:
+        min = 1000,
+        max = 10000,
+        chunk = "{chunk}",
+        num_chunks = 100
+    log:
+        "Logs/FastQTL/fastQTL_{chunk}.txt"
+    shell:
+        "fastQTL --vcf {input.genotypes} "
+        " --bed {input.counts} --chunk {params.chunk} {params.num_chunks}"
+        " --out {output} -- log {log}"
+
+rule cat_fast_qtl:
+    input:
+        expand("FastQTL/fastQTL.{chunk}.txt.gz", chunk=range(1,101))
+    output:
+        "FastQTL/FastQTL.all.txt.gz"
+    shell:
+        "zcat {input} | gzip -c > {output}"
+
+rule fast_qtl_permutations:
+    input:
+        counts = rules.bgzip_counts.output,
+        count_index = rules.index_counts.output,
+        genotypes = rules.filter_tags.output,
+        genotype_index = rules.tabix_vcf.output
+    output:
         "FastQTL/permutations.{chunk}.txt.gz"
     params:
         min = 1000,
@@ -361,11 +391,11 @@ rule fast_qtl:
     log:
         "Logs/FastQTL/fastQTL_{chunk}.txt"
     shell:
-        "~/src/FastQTL-2.165.linux/bin/fastQTL.1.165.linux --vcf {input.genotypes} "
+        "fastQTL --vcf {input.genotypes} "
         " --bed {input.counts} --chunk {params.chunk} {params.num_chunks}"
         " --permute {params.min} {params.max} --out {output} -- log {log}"
 
-rule cat_eqtls:
+rule cat_permutations:
     input:
         expand("FastQTL/permutations.{chunk}.txt.gz", chunk=range(1,101))
     output:
@@ -375,7 +405,7 @@ rule cat_eqtls:
 
 rule q_values:
     input:
-        eqtls=rules.cat_eqtls.output,
+        eqtls=rules.cat_permutations.output,
         snp_pos=rules.snp_positions.output
     output:
         "FastQTL/results.txt"
