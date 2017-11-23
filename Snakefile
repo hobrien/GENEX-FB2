@@ -27,6 +27,7 @@ rules:
     index_counts: index BED file of residualised counts
     select_samples: exclude sample from vcf and make sure order is the same as the counts file
     filter_tags: add info about MAF, HWE, etc. and filter SNPs
+    snp_positions: extract genomic coordinates for each SNP (to be associated with eQTLs in q_values rule)
     tabix_vcf: index final vcf file
     fast_qtl: run permutation analysis on each chunk of genome (not sure if I also need to calculate nominal p-values)
     cat_eqtl: concatinate fast_qtl output
@@ -328,6 +329,14 @@ rule filter_tags:
         "bcftools +fill-tags {input} -Ou | bcftools view -e'MAF<{params.maf} || "
         "HWE<{params.hwe} || R2<{params.r2}' -Ou - | bcftools sort -Oz -o {output} - "
 
+rule snp_positions:
+    input:
+        rules.filter_tags.output
+    output:
+        "Genotypes/Combined/snp_positions.txt"
+    shell:
+        "bcftools view -H {input} |cut -f 1,2,3 > {output}"
+
 rule tabix_vcf:
     input:
         rules.filter_tags.output
@@ -366,11 +375,11 @@ rule cat_eqtls:
 
 rule q_values:
     input:
-        rules.cat_eqtls.output
+        eqtls=rules.cat_eqtls.output,
+        snp_pos=rules.snp_positions.output
     output:
         "FastQTL/results.txt"
     params:
         fdr=.05
     shell:
-        "Rscript ~/src/FastQTL-2.165.linux/scripts/calulateNominalPvalueThresholds.R "
-        "{input} {params.fdr} {output}"
+        "Rscript R/calulateNominalPvalueThresholds.R {input.eqtls} {input.snp_pos} {params.fdr} {output}"
