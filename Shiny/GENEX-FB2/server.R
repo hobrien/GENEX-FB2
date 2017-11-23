@@ -63,9 +63,10 @@ PlotEQTL<-function(row_num, counts, cis, target, snp_header) {
   qval <- qtl_stats$qvalue[1]
   #mean <- data %>% group_by(genotype) %>% summarise(mean = mean(value))
   title<-paste0(geneID, ' x ', snp)
-  plot<-  ggplot(data, aes(x=DS, colour=geno)) + 
+  plot<-  ggplot(data, aes(y=value, x=DS)) + 
     #geom_errorbar(aes(ymin=mean, ymax=mean), colour='black', size=1, width=.5, data=mean) +
-    geom_quasirandom(aes(y=value), width=0.05, alpha=.5) + 
+    geom_smooth(method='lm', colour='black') +
+    geom_quasirandom(aes(colour=geno), width=0.05, alpha=.5) + 
     ylab("Normalised Counts") +
     xlab('Dosage') +
     #scale_x_discrete(breaks=c(0,1,2), labels=c('Ref', 'Het', 'Alt')) +
