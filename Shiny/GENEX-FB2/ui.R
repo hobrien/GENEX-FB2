@@ -19,8 +19,9 @@ navbarPage("Gene Expression in the Fetal Brain: EQTL:",
                        sidebarPanel(
                          radioButtons("p_type", "Maximum p-value", c('Uncorrected p-values' = 'nominal_p', 'FDR corrected p-values (q-values)'= 'qvalue'), selected = 'qvalue', inline = FALSE,
                                       width = NULL),
-                         sliderInput("pvalue", textOutput("SciNotation"), 
-                                     min = -80, max = -2, value = -10),
+                         sliderInput("pvalue", "p-value:", 
+                                     min = 0, max = 1, value = 0.1, step= 0.01),
+                         textInput("typedPval", "Type p-value", value=.1),
                          conditionalPanel(
                            'input.dataset === "Top Cis"',
                            HTML("<strong>Select row to plot data</strong><br>"),

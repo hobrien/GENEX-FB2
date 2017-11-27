@@ -18,23 +18,9 @@ source("FormatGGplot.R")
 library(DT)
 library(ggbeeswarm)
 
-
-
 # setwd("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Shiny/GENEX-FB2/")
-counts <- read_delim("./Data/counts.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
-  select(-Chr, -gene_type, -ChrType)
 
-colnames(counts) <- str_replace_all(colnames(counts), 'norm.', '')
-
-top_cis <- read_delim("./Data/cis_eqtl.txt", " ", escape_double = FALSE, trim_ws = TRUE, col_types = cols(pos='c')) %>%
-  select(-one_of(c('cisVariants', 'Beta1', 'Beta2', 'nominal_p_threshold', 'padj_direct', 'padj_beta')))
-
-target <- read_delim("./Data/SampleInfo.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
-  mutate(Sample=as.character(Sample))
-
-snp_header <- system("bcftools view -h ./Data/combined_filtered.vcf.gz | tail -1", intern=TRUE) %>%
-  str_split('\t')
-
+################################## Define functions ##################################
 
 PlotEQTL<-function(row_num, counts, cis, target, snp_header) {
   qtl_stats <- cis[row_num,]
@@ -56,8 +42,8 @@ PlotEQTL<-function(row_num, counts, cis, target, snp_header) {
     filter(!is.na(GT)) %>%
     mutate(DS=as.numeric(DS), 
            geno=factor(ifelse(GT=='0|0', paste0(UQ(ref), UQ(ref)),
-                       ifelse(GT=='1|1', paste0(UQ(alt), UQ(alt)),
-                              paste0(UQ(ref), UQ(alt)))),
+                              ifelse(GT=='1|1', paste0(UQ(alt), UQ(alt)),
+                                     paste0(UQ(ref), UQ(alt)))),
                        levels=c(paste0(UQ(ref), UQ(ref)), paste0(UQ(ref), UQ(alt)), paste0(UQ(alt), UQ(alt)) )))
   pval <- qtl_stats$nominal_p[1]
   qval <- qtl_stats$qvalue[1]
@@ -78,18 +64,43 @@ PlotEQTL<-function(row_num, counts, cis, target, snp_header) {
   plot
 }
 
-shinyServer(function(input, output) {
-  output$SciNotation <- reactive({
-    paste0("p-value: ", 10^input$pvalue)
+add_links <-function(fitted) {
+  mutate(fitted, SYMBOL=paste0("<a href=http://www.genecards.org/cgi-bin/carddisp.pl?gene=", SYMBOL, " target='_blank'>", SYMBOL, "</a>"),
+         GTEx=paste0("<a href=https://gtexportal.org/home/gene/", Id, " target='_blank'>GTEx</a>"),
+         Id=paste0("<a href=http://www.ensembl.org/Homo_sapiens/Gene/Summary?db=core;g=", Id, " target='_blank'>", Id, "</a>")
+  )         
+}
+
+################################## Load Data ##################################
+
+counts <- read_delim("./Data/counts.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  select(-Chr, -gene_type, -ChrType)
+
+colnames(counts) <- str_replace_all(colnames(counts), 'norm.', '')
+
+top_cis <- read_delim("./Data/cis_eqtl.txt", " ", escape_double = FALSE, trim_ws = TRUE, col_types = cols(pos='c')) %>%
+  select(-one_of(c('cisVariants', 'Beta1', 'Beta2', 'nominal_p_threshold', 'padj_direct', 'padj_beta')))
+
+target <- read_delim("./Data/SampleInfo.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  mutate(Sample=as.character(Sample))
+
+snp_header <- system("bcftools view -h ./Data/combined_filtered.vcf.gz | tail -1", intern=TRUE) %>%
+  str_split('\t')
+
+################################## Run server ##################################
+
+shinyServer(function(session, input, output) {
+  observe({
+    updateSliderInput(session, "pvalue", value = input$typedPval)
   })
   output$eQTLplotTop <- renderPlot({
     validate(
       need(input$TopCisTable_rows_selected != "", "Please select a row from the table")
     )
-    PlotEQTL(input$TopCisTable_rows_selected, counts, top_cis[top_cis[, input$p_type] < 10^input$pvalue, ], target, snp_header)
+    PlotEQTL(input$TopCisTable_rows_selected, counts, top_cis[top_cis[, input$p_type] < input$pvalue, ], target, snp_header)
   })
   output$TopCisTable <- DT::renderDataTable({
-    DT::datatable(top_cis[top_cis[, input$p_type] < 10^input$pvalue, ], selection = 'single')
+    DT::datatable(top_cis[top_cis[, input$p_type] < input$pvalue, ], selection = 'single')
   })
   output$top_cis_download <- downloadHandler(
     filename = function() { 'cis_eqtl.csv' },
