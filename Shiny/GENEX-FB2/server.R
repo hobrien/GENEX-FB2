@@ -71,6 +71,16 @@ add_links <-function(fitted) {
   )         
 }
 
+filter_table <- function(fitted, p_type, p_val) {
+  fitted <- filter(fitted, !is.na(UQ(as.name(p_type))) & UQ(as.name(p_type)) <= p_val ) %>%
+    arrange(UQ(as.name(p_type)))
+  fitted <- mutate(fitted, nominal_p = as.numeric(format(nominal_p, digits=3)), qvalue = as.numeric(format(qvalue, digits=3))) %>%
+    select(Id=geneID, SYMBOL, TopSNP=topSNP, Distance=distance, 
+           `Nominal p-value`=nominal_p, FDR=qvalue, Position = pos)
+  fitted
+}
+
+
 ################################## Load Data ##################################
 
 counts <- read_delim("./Data/counts.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
@@ -79,7 +89,8 @@ counts <- read_delim("./Data/counts.txt", "\t", escape_double = FALSE, trim_ws =
 colnames(counts) <- str_replace_all(colnames(counts), 'norm.', '')
 
 top_cis <- read_delim("./Data/cis_eqtl.txt", " ", escape_double = FALSE, trim_ws = TRUE, col_types = cols(pos='c')) %>%
-  select(-one_of(c('cisVariants', 'Beta1', 'Beta2', 'nominal_p_threshold', 'padj_direct', 'padj_beta')))
+  left_join(select(counts, Id, SYMBOL), by=c('geneID' = 'Id')) %>%
+  select(-one_of(c('cisVariants', 'slope', 'Beta1', 'Beta2', 'nominal_p_threshold', 'nominal_p_threshold.1','padj_direct', 'padj_beta')))
 
 target <- read_delim("./Data/SampleInfo.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   mutate(Sample=as.character(Sample))
@@ -99,15 +110,12 @@ shinyServer(function(session, input, output) {
     )
     PlotEQTL(input$TopCisTable_rows_selected, counts, top_cis[top_cis[, input$p_type] < input$pvalue, ], target, snp_header)
   })
-  output$TopCisTable <- DT::renderDataTable({
-    DT::datatable(top_cis[top_cis[, input$p_type] < input$pvalue, ], selection = 'single')
+  output$SexDiffTable <- DT::renderDataTable({
+    DT::datatable(add_links(filter_table(fitted, input$ChrType, input$Bias, input$p_type, input$pvalue)), escape = FALSE, selection="single", caption = 'Genes exhibiting sex differences in fetal brain expression')
   })
-  output$top_cis_download <- downloadHandler(
-    filename = function() { 'cis_eqtl.csv' },
-    content = function(file) {
-      write_tsv(cis[cis$padj < input$pvalue, ], file)
-    }
-  )
-  
+  output$TopCisTable <- DT::renderDataTable({
+    DT::datatable(add_links(filter_table(top_cis, input$p_type, input$pvalue)), escape = FALSE, selection="single", caption = 'Top eQTL for each eGENE')
+  })
+
   
 })
