@@ -41,6 +41,6 @@ snp_pos <- mutate(snp_pos, pos = paste(X1, X2, sep=':')) %>%
 D <- left_join(D, snp_pos)
 
 #Write output
-write.table(D[, c(1,2,3,4,6,7,9,8,13,10,11,12,13,14)], args[4], quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(D[, c(1,2,3,4,6,7,9,8,13,10,11,12,14)], args[4], quote=FALSE, row.names=FALSE, col.names=TRUE)
 
 cat("Done\n")
