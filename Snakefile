@@ -22,6 +22,7 @@ rules:
     get_gene_positions: extract coordinates of genes from gtf file
     filter_counts: filter low expression genes and remove excluded samples from count matrix
     peer: PEER analysis on count data, using cofactors and PCA results
+    peer_nc: PEER analysis on count data, without cofactors or PCA results
     make_bed: convert PEER residuals to BED file that can be used as input for FastQTL
     bgzip_counts: compress BED file of residualised counts
     index_counts: index BED file of residualised counts
@@ -49,7 +50,8 @@ Notes
 rule all:
     input:
        "FastQTL/results.txt",
-       "FastQTL/FastQTL.all.txt.gz"
+       "FastQTL/FastQTL.all.txt.gz",
+       "Peer/factors_nc.txt"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -278,6 +280,24 @@ rule peer:
         "(Rscript /c8000xd3/rnaseq-heath/GENEX-FB2/R/PEER.R -p {input.pca} "
         "-n {params.num_peer} -c {input.counts} -b {params.sample_info} "
         "-r {output} -f {params.factors} -a {params.alpha}) > {log}"
+
+rule peer_nc:
+    input:
+        counts = rules.filter_counts.output
+    output:
+        "Peer/factors_nc.txt"
+    params:
+        residuals = "Peer/residuals_nc.txt",
+        alpha = "Peer/alpha_nc.txt",
+        num_peer = 10
+    log:
+        "Logs/PEER/peer_nc.txt"
+    conda:
+        "env/peer.yaml"
+    shell:
+        "(Rscript /c8000xd3/rnaseq-heath/GENEX-FB2/R/PEER.R  "
+        "-n {params.num_peer} -c {input.counts} "
+        "-r {params.residuals} -f {output}  -a {params.alpha}) > {log}"
 
 rule make_bed:
     input:
