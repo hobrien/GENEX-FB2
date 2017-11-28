@@ -239,6 +239,19 @@ rule plink_pca:
     shell:
         "plink --bfile {params.input_prefix} --pca {params.num_components} --extract {input} --out {params.output_prefix}"
 
+
+rule scz_ld:
+    input:
+        bfile=rules.plink_ld_prune.output,
+        snps="Data/scz_snps.txt"
+    output:
+        "Genotypes/Plink/scz_ld.tags"
+    params:
+        input_prefix = "Genotypes/Plink/genotypes",
+        output_prefix = "Genotypes/Plink/scz_ld",
+    shell:
+        "plink -bfile {params.input_prefix} --show-tags {input.snps} --list-all --out {params.output_prefix}"
+
 rule get_gene_positions:
     input:
         gtf=config["reference"]["gtf"]
