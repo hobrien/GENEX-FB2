@@ -1,0 +1,277 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r }
+library(tidyverse)
+library(EnsDb.Hsapiens.v86)
+library(ggbio)
+library(biovizBase)
+library(GGally)
+data(hg19IdeogramCyto)
+source("../Shiny/GENEX-FB2/FormatGGplot.R")
+
+cis <- read_tsv("../Shiny/GENEX-FB2/Data/cis_eqtl.txt")
+cis_tr <- read_tsv("/Users/heo3/Dropbox/cis_transcript_eqtl.txt")
+#trans <- read_tsv("../MatrixEQTL/trans_eqtl.txt")
+top_cis <- cis %>% group_by(SYMBOL) %>% arrange(pvalue) %>% dplyr::slice(1) %>% ungroup()
+
+snp_pos <- read_delim("~/BTSync/FetalRNAseq/Github/GENEX-FB2/MatrixEQTL/snp_pos.txt",
+"\t", escape_double = FALSE, col_names = FALSE,
+trim_ws = TRUE)
+
+snps <- read_tsv("../Shiny/GENEX-FB2/Data/genotypes.txt")
+counts <- read_delim("../../GENEX-FB1/Shiny/GENEX-FB1/Data/counts12_20.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
+
+counts_tr <- read_delim("../../GENEX-FB1/Shiny/GENEX-FB1/Data/counts12_20_tr.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
+
+SOX2_cis <- read_tsv("../MatrixEQTL/SOX2_cis.txt") %>%
+  filter(gene=='ENSG00000181449') %>%
+  left_join(snp_pos, by=c('SNP' = 'X1'))
+
+SOX2_OT_cis <- read_tsv("../MatrixEQTL/SOX2_cis.txt") %>%
+  filter(gene=='ENSG00000242808') %>%
+  left_join(snp_pos, by=c('SNP' = 'X1'))
+
+SOX2_FXR1_cis <- read_tsv("../MatrixEQTL/SOX2_cis.txt") %>%
+  filter(gene=='ENSG00000114416') %>%
+  left_join(snp_pos, by=c('SNP' = 'X1'))
+
+allPGC <- read_delim("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/ckqny.scz2snpres",
+"\t", escape_double = FALSE, trim_ws = TRUE)
+
+
+#SNAPResults <- read_delim("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/SNAPResults.txt",
+#"\t", escape_double = FALSE, trim_ws = TRUE)
+#dplyr::select(SNAPResults, SNP) %>% inner_join(cis)
+
+
+
+#pgc_scz52_credible_snps <- #read_delim("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/pgc.scz52.credible.snps.txt",
+#"\t", escape_double = FALSE, trim_ws = TRUE)
+#dplyr::select(pgc_scz52_credible_snps, snps=credibleSNP) %>% inner_join(cis) %>% View()
+PlotEQTL<-function(geneID, snp, counts, snps, labels) {
+  data <- counts %>% filter(Id == geneID) %>%  
+    dplyr::select(-Id, -SYMBOL, -Chr, -gene_type, -ChrType) %>%
+    gather("Sample", "value") %>%
+    dplyr::select(Sample, value) %>%
+    mutate(Sample=str_replace(Sample, 'norm.', ''))
+  data<- snps %>% filter(id==snp) %>%
+    dplyr::select(-id) %>%
+    gather(Sample, genotype) %>%
+    mutate(genotype = factor(genotype)) %>%
+    inner_join(data, by="Sample")
+  mean <- data %>% group_by(genotype) %>% summarise(mean = mean(value))
+  print(mean)
+  title <- filter(counts, Id==geneID)$SYMBOL
+  plot <-  ggplot(data, aes(x=genotype, colour=genotype)) + 
+    geom_errorbar(aes(ymin=mean, ymax=mean), colour='black', size=1, width=.5, data=mean) +
+    geom_jitter(aes(y=value), height = 0, width=.1, alpha=.75) + 
+    ylab("Normalized Counts") +
+    xlab(snp) +
+    scale_x_discrete(breaks=c(0,1,2), labels=labels) +
+    side_theme() +
+    scale_colour_brewer(type = "qual", palette = 6) +
+  ggtitle(title) 
+  plot
+}
+```
+
+```{r}
+scz2_rep_128 <- read_delim("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/scz2.rep.128.txt",
+"\t", escape_double = FALSE, trim_ws = TRUE)
+PGC128_cis <- dplyr::select(scz2_rep_128, SNP=snpid) %>% inner_join(cis)
+
+PGC128_cis_r2 <- read_table("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/PGC128_top_cis.ld")
+PGC128_cis_r2 <- semi_join(cis, dplyr::select(PGC128_cis, SYMBOL)) %>% 
+  full_join(PGC128_cis_r2, by=c("SNP" = "SNP_B")) %>% 
+  mutate(R2=ifelse(is.na(R2), 0, R2), padj=ifelse(is.na(padj), 1, padj)) 
+PGC128_cis_r2 <- filter(PGC128_cis_r2, !is.na(SYMBOL)) %>%
+  bind_rows(filter(PGC128_cis_r2, is.na(SYMBOL)) %>% 
+              dplyr::select(-SYMBOL) %>% 
+              left_join(dplyr::select(PGC128_cis, SNP, SYMBOL), by=c("SNP_A" = "SNP"))
+            )
+
+ggplot(PGC128_cis_r2, aes(x=R2, y=-log10(padj)))+geom_point(alpha=.3)+facet_wrap(~SYMBOL)
+```
+
+```{r SOX2}
+filter(counts, SYMBOL=="SOX2")$Id %>% PlotEQTL('rs9841616', counts, snps, c('TT', 'TA', 'AA'))
+```
+
+- This doesn't work because snps is from the shiny app and only includes SNPs that have significant eQTLs in the gene-level analysis
+```{r SNX19}
+filter(cis_tr, SNP=='rs10791097' & gene=='ENST00000527116')$gene %>% PlotEQTL('rs10791097', dplyr::select(counts_tr, -GeneId), snps, c('ref', 'het', 'alt'))
+
+
+```
+
+```{r}
+
+eQTLs <- ggplot(SOX2_cis, aes(x=X3, y=-log10(`p-value`))) + 
+  geom_point(size=.5) + 
+  xlab('') + 
+  main_theme() +
+  theme(axis.title.y=element_text(size=12), 
+        axis.text.x=element_text(size=9),
+        axis.text.y=element_text(size=9))
+
+gr <- GRanges(seqnames = 3, IRanges(180714335, 182713893), strand = "*")
+genes <- autoplot(exonsBy(EnsDb.Hsapiens.v86, by='gene', filter=GRangesFilter(gr)), 
+                  names.expr="", 
+                  main.geom = "arrowrect", 
+                  gap.geom = "chevron") + 
+  main_theme() + theme(axis.title.y=element_text(size=12), 
+        axis.text.x=element_text(size=9),
+        axis.text.y=element_text(size=9))
+genes_nogroup <- autoplot(EnsDb.Hsapiens.v86, GRangesFilter(gr), 
+                  names.expr="", 
+                  main.geom = "arrowrect", 
+                  gap.geom = "chevron") + 
+  main_theme() + theme(axis.title.y=element_text(size=12), 
+        axis.text.x=element_text(size=9),
+        axis.text.y=element_text(size=9))
+idio<-plotIdeogram(hg19IdeogramCyto, "chr3", aspect.ratio = 1/20, zoom.region = c(180714335, 182713893))
+tracks(`SOX2 eQTL`=eQTLs, Transcripts=genes, heights=c(2,2))
+ggsave("SOX2.pdf")
+```
+
+
+```{r}
+SOX2_cor <- SOX2_cis %>% left_join(allPGC, by=c("SNP" = "snpid"))
+SOX2-OT_cor <- SOX2_OT_cis %>% left_join(allPGC, by=c("SNP" = "snpid"))
+SOX2_FXR1_cor <- SOX2_FXR1_cis %>% left_join(allPGC, by=c("SNP" = "snpid"))
+```
+
+```{r}
+alpha <- read_delim("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Peer/alpha_nc.txt",
+"\t", escape_double = FALSE, trim_ws = TRUE)
+
+mutate(alpha, row_num=row_number()) %>% ggplot(aes(x=row_num, y=1/alpha))+geom_point()+ggtitle("All factors without covariates")
+
+mutate(alpha, row_num=row_number()) %>% 
+  filter(row_num>1) %>%
+  ggplot(aes(x=row_num, y=1/alpha))+geom_point()+ggtitle("factors 2-10 without covarates")
+
+alpha_cov <- read_delim("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Peer/alpha.txt",
+"\t", escape_double = FALSE, trim_ws = TRUE)
+
+mutate(alpha_cov, row_num=row_number()) %>% ggplot(aes(x=row_num, y=1/alpha))+geom_point()+ggtitle("all factors with covarates")
+
+mutate(alpha_cov, row_num=row_number()) %>% 
+  filter(row_num != 12 & row_num != 8 & row_num != 9) %>%
+  ggplot(aes(x=row_num, y=1/alpha))+geom_point()+ggtitle("factors 3/4/6-10 with 7 covarates")
+
+
+```
+
+```{r}
+factors_cov <- read_delim("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Peer/factors.txt",
+"\t", escape_double = FALSE, trim_ws = TRUE, col_types = cols(ID='c'))
+factors <- read_delim("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Peer/factors_nc.txt",
+"\t", escape_double = FALSE, trim_ws = TRUE, col_types = cols(ID='c'))
+factors %>% select(no_cov=V1) %>% bind_cols(select(factors_cov, cov=V12)) %>% ggplot(aes(cov, no_cov))+geom_point()
+
+factors %>% select(no_cov=V2) %>% bind_cols(select(factors_cov, cov=V9)) %>% ggplot(aes(cov, no_cov))+geom_point()
+
+factors %>% select(no_cov=V3) %>% bind_cols(select(factors_cov, cov=V8)) %>% ggplot(aes(cov, no_cov))+geom_point()
+
+factors %>% select(no_cov=V4) %>% bind_cols(select(factors_cov, cov=V11)) %>% ggplot(aes(cov, no_cov))+geom_point()
+
+factors %>% select(no_cov=V5) %>% bind_cols(select(factors_cov, cov=V10)) %>% ggplot(aes(cov, no_cov))+geom_point()
+
+factors %>% select(no_cov=V6) %>% bind_cols(select(factors_cov, cov=V13)) %>% ggplot(aes(cov, no_cov))+geom_point()
+
+```
+
+
+```{r}
+factors <-select(factors_cov, ID, Sex=V1, PCW=V2, RIN=V3, Batch=V4, PC1=V5, PC2=V6, PC3=V7) %>%
+  full_join(factors)
+
+gather(factors, peer, value, one_of(paste0('V', seq(10)))) %>%
+  gather(covariate, cov_value, -ID, -peer, -value) %>%
+  group_by(peer, covariate) %>%
+  nest() %>%
+  mutate(cor=map(data, ~cor.test(.$cov_value, .$value)), r=map_dbl(cor, 4), p=map_dbl(cor, 3)) %>%
+  select(peer, covariate, r, p) %>% 
+  filter(p<.05) %>%
+  mutate(covariate=factor(covariate, levels=c('Batch', 'PCW', 'RIN', 'PC1', 'PC2'))) %>%
+  arrange(covariate, p)
+
+ggplot(factors, aes(V5, V3, colour=factor(Batch))) + geom_point()
+ggplot(factors, aes(V9, V8, colour=PCW)) + geom_point()
+ggplot(factors, aes(V6, V8, colour=RIN)) + geom_point()
+ggplot(factors, aes(PC1, PC2, colour=V8)) + geom_point()
+
+```
+
+
+Forebrain: TBR1, EMX1, FOXG1
+```{r}
+counts <- read_delim("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/counts_vst.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
+factors_forbrain <-filter(counts, Id=="ENSG00000136535") %>% 
+  select(-Id) %>% 
+  gather(ID, TBR1) %>%
+  full_join(filter(counts, Id=="ENSG00000135638") %>% 
+  select(-Id) %>% 
+  gather(ID, EMX1)) %>%
+  full_join(filter(counts, Id=="ENSG00000176165") %>% 
+  select(-Id) %>% 
+  gather(ID, FOXG1)) %>%
+  full_join(factors_cov)
+
+ggplot(factors_forbrain, aes(TBR1, EMX1)) + geom_point()
+ggplot(factors_forbrain, aes(TBR1, FOXG1)) + geom_point()
+ggplot(factors_forbrain, aes(TBR1, V5)) + geom_point()
+```
+
+Hindbrain: KROX20, GBX2, HOXA2
+```{r}
+factors_hindbrain <-filter(counts, Id=="ENSG00000122877") %>% 
+  select(-Id) %>% 
+  gather(ID, KROX20) %>%
+  full_join(filter(counts, Id=="ENSG00000168505") %>% 
+  select(-Id) %>% 
+  gather(ID, GBX2)) %>%
+  full_join(filter(counts, Id=="ENSG00000105996") %>% 
+  select(-Id) %>% 
+  gather(ID, HOXA2)) %>%
+  full_join(factors_forbrain)
+
+ggplot(factors_hindbrain, aes(KROX20, GBX2)) + geom_point()
+ggplot(factors_hindbrain, aes(KROX20, HOXA2)) + geom_point()
+ggplot(factors_hindbrain, aes(GBX2, HOXA2)) + geom_point()
+ggplot(factors_hindbrain, aes(TBR1, GBX2)) + geom_point()
+ggplot(factors_hindbrain, aes(TBR1, KROX20)) + geom_point()
+ggplot(factors_hindbrain, aes(TBR1, HOXA2)) + geom_point()
+ggplot(factors_hindbrain, aes(V5, GBX2)) + geom_point()
+ggplot(factors_hindbrain, aes(V5, KROX20)) + geom_point()
+ggplot(factors_hindbrain, aes(V5, HOXA2)) + geom_point()
+
+```
+
+Scz SNPs
+```{r}
+scz_snps <- read_csv("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/scz_snps.txt", 
+     col_names = c('index_snp'))
+scz_ld_tags <- read_table("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Genotypes/Plink/scz_ld.tags.list")
+
+anti_join(scz_snps, scz_ld_tags, by=c('index_snp' = 'SNP')) %>%
+  select(missing_SNPs=index_snp)
+
+
+scz_ld <- read_csv("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Genotypes/Plink/scz_ld.tags", 
+     col_names = c('tagged_snp'))
+
+top_cis <- read_delim("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Shiny/GENEX-FB2/Data/cis_eqtl.txt", " ", escape_double = FALSE, trim_ws = TRUE, col_types = cols(pos='c'))
+
+semi_join(top_cis, scz_ld, by=c('topSNP' = 'tagged_snp')) %>%
+  filter(qvalue<.05) %>%
+  select(geneID, topSNP, pos, distance, qvalue)
+```
