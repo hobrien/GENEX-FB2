@@ -346,10 +346,10 @@ rule select_samples:
         expression=rules.make_bed.output,
         vcf=rules.combine_chromosomes.output
     output:
-        "Genotypes/Combined/combined_inc_samples.bcf"
+        "Genotypes/Combined/combined_inc_samples.vcf.gz"
     shell:
         "bcftools view -s `head -1 {input.expression} | cut --complement -f 1-4 | perl -pe 's/\s+(?!$)/,/g'` "
-        "{input.vcf} -Ob -o {output} "
+        "{input.vcf} -Ou - | bcftools sort -Ov -o {output} "
 
 rule filter_tags:
     input:
