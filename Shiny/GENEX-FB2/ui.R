@@ -13,7 +13,7 @@ library(shinyBS)
 # Application title
 #titlePanel("Gene Expression in the Fetal Brain: Sex Biases"),
 
-navbarPage("Gene Expression in the Fetal Brain: EQTL:",
+navbarPage("Fetal Brain Sequencing (FBSeq) 1: eQTLs",
             tabPanel("Cis eQTLs",
                      sidebarLayout(
                        sidebarPanel(
