@@ -50,6 +50,7 @@ Peer/*
 # Input data
 Data/*
 Genotypes/*
+GTEx_Analysis_v7_eQTL
 
 # Count data
 Counts/*
