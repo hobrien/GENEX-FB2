@@ -52,7 +52,8 @@ rule all:
     input:
        "FastQTL/results.txt",
        "FastQTL/FastQTL.all.txt.gz",
-       "Peer/factors_nc.txt"
+       "Peer/factors_nc.txt",
+       "Genotypes/Plink/scz_ld.tags"
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -283,7 +284,8 @@ rule plink_ld_prune:
 
 rule plink_pca:
     input:
-        rules.plink_ld_prune.output
+        bfile=rules.plink_import.output,
+        included=rules.plink_ld_prune.output
     output:
         "Genotypes/Plink/pca.eigenvec",
     params:
@@ -291,11 +293,11 @@ rule plink_pca:
         output_prefix = "Genotypes/Plink/pca",
         num_components = 3
     shell:
-        "plink --bfile {params.input_prefix} --pca {params.num_components} --extract {input} --out {params.output_prefix}"
+        "plink --bfile {params.input_prefix} --pca {params.num_components} --extract {input.included} --out {params.output_prefix}"
 
 rule scz_ld:
     input:
-        bfile=rules.plink_ld_prune.output,
+        bfile=rules.plink_import.output,
         snps="Data/scz_snps.txt"
     output:
         "Genotypes/Plink/scz_ld.tags"
