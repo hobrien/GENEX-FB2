@@ -16,19 +16,20 @@ rules:
     excluded_sites: list non variable sites (?)/ sites >2 variants for exclusion
     filter_dup: remove non variable sites (?)/ sites >2 variants
     combine_chromosomes: combine vcf files for individual chromosomes unto a single vcf
+    get_gene_positions: extract coordinates of genes from gtf file
+    filter_counts: filter low expression genes and remove excluded samples from count matrix
+    select_samples: exclude sample from vcf and make sure order is the same as the counts file
+    filter_tags: add info about MAF, HWE, etc. and filter SNPs
+    snp_positions: extract genomic coordinates for each SNP (to be associated with eQTLs in q_values rule)
     plink_import: create (plink) bed file from vcf for PCA analysis
     plink_ld_prune: LD pruning analysis on plink-formatted genotype data
     plink_pca: PCA analysis on LD-pruned plink-formatted genotype data
-    get_gene_positions: extract coordinates of genes from gtf file
-    filter_counts: filter low expression genes and remove excluded samples from count matrix
+    scz_ld: get list of SNPs tagged by schizophrenia index SNPs
     peer: PEER analysis on count data, using cofactors and PCA results
     peer_nc: PEER analysis on count data, without cofactors or PCA results
     make_bed: convert PEER residuals to BED file that can be used as input for FastQTL
     bgzip_counts: compress BED file of residualised counts
     index_counts: index BED file of residualised counts
-    select_samples: exclude sample from vcf and make sure order is the same as the counts file
-    filter_tags: add info about MAF, HWE, etc. and filter SNPs
-    snp_positions: extract genomic coordinates for each SNP (to be associated with eQTLs in q_values rule)
     tabix_vcf: index final vcf file
     fast_qtl: run fast_qtl on each chunk of genome (calculate nominal p-values for all SNPs)
     cat_fast_qtl: concatinate fast_qtl nominal pass output
@@ -206,15 +207,68 @@ rule combine_chromosomes:
     shell:
         "(bcftools concat -Ob -o {output} {input}) 2> {log}"
 
+rule get_gene_positions:
+    input:
+        gtf=config["reference"]["gtf"]
+    output:
+        "Data/geneloc.txt"
+    shell:
+        "cat {input} | awk '{{if ($3 == \"gene\") print $10, $1, $4, $5}}' | sed 's/[\";]//g' > {output}"
+
+rule filter_counts:
+    input:
+        gene_counts=config["count_data"],
+        geneloc=rules.get_gene_positions.output
+    output:
+        "Data/expression.bed"
+    params:
+        min=5,
+        num=10,
+        excluded = "17046,16385,17048,16024,16115,11449"
+    shell:
+        "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
+        "--min {params.min} --num {params.num} --out {output} --exclude {params.excluded}"
+
+rule select_samples:
+    input:
+        expression=rules.filter_counts.output,
+        vcf=rules.combine_chromosomes.output
+    output:
+        "Genotypes/Combined/combined_inc_samples.vcf.gz"
+    shell:
+        "bcftools view -s `head -1 {input.expression} | cut --complement -f 1-4 | perl -pe 's/\s+(?!$)/,/g'` "
+        "{input.vcf} -Ou - | bcftools sort -Oz -o {output} "
+
+rule filter_tags:
+    input:
+        rules.select_samples.output
+    output:
+        "Genotypes/Combined/combined_filtered.vcf.gz"
+    params:
+        maf=.05,
+        hwe=.0001,
+        r2=.8
+    shell:
+        "bcftools +fill-tags {input} -Ou | bcftools view -e'MAF<{params.maf} || "
+        "HWE<{params.hwe} || R2<{params.r2}' -Ou - | bcftools sort -Oz -o {output} - "
+
+rule snp_positions:
+    input:
+        rules.filter_tags.output
+    output:
+        "Genotypes/Combined/snp_positions.txt"
+    shell:
+        "bcftools view -H {input} |cut -f 1,2,3 > {output}"
+
 rule plink_import:
     input:
-        rules.combine_chromosomes.output
+        rules.filter_tags.output
     output:
         "Genotypes/Plink/genotypes.bed"
     params:
         prefix = "Genotypes/Plink/genotypes",         
     shell:
-        "plink --bcf {input} --double-id --maf .05 --hwe .0001 --make-bed --out {params.prefix}"
+        "plink --bcf {input} --double-id --make-bed --out {params.prefix}"
 
 rule plink_ld_prune:
     input:
@@ -239,7 +293,6 @@ rule plink_pca:
     shell:
         "plink --bfile {params.input_prefix} --pca {params.num_components} --extract {input} --out {params.output_prefix}"
 
-
 rule scz_ld:
     input:
         bfile=rules.plink_ld_prune.output,
@@ -251,28 +304,6 @@ rule scz_ld:
         output_prefix = "Genotypes/Plink/scz_ld",
     shell:
         "plink -bfile {params.input_prefix} --show-tags {input.snps} --list-all --out {params.output_prefix}"
-
-rule get_gene_positions:
-    input:
-        gtf=config["reference"]["gtf"]
-    output:
-        "Data/geneloc.txt"
-    shell:
-        "cat {input} | awk '{{if ($3 == \"gene\") print $10, $1, $4, $5}}' | sed 's/[\";]//g' > {output}"
-
-rule filter_counts:
-    input:
-        gene_counts=config["count_data"],
-        geneloc="Data/geneloc.txt"
-    output:
-        "Data/expression.bed"
-    params:
-        min=5,
-        num=10,
-        excluded = "17046,16385,17048,16024,16115,11449"
-    shell:
-        "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
-        "--min {params.min} --num {params.num} --out {output} --exclude {params.excluded}"
 
 rule peer:
     input:
@@ -340,37 +371,6 @@ rule index_counts:
         "Data/expression_residuals.bed.gz.tbi"
     shell:
         "tabix -p bed {input}"
-        
-rule select_samples:
-    input:
-        expression=rules.make_bed.output,
-        vcf=rules.combine_chromosomes.output
-    output:
-        "Genotypes/Combined/combined_inc_samples.vcf.gz"
-    shell:
-        "bcftools view -s `head -1 {input.expression} | cut --complement -f 1-4 | perl -pe 's/\s+(?!$)/,/g'` "
-        "{input.vcf} -Ou - | bcftools sort -Ov -o {output} "
-
-rule filter_tags:
-    input:
-        rules.select_samples.output
-    output:
-        "Genotypes/Combined/combined_filtered.vcf.gz"
-    params:
-        maf=.05,
-        hwe=.0001,
-        r2=.8
-    shell:
-        "bcftools +fill-tags {input} -Ou | bcftools view -e'MAF<{params.maf} || "
-        "HWE<{params.hwe} || R2<{params.r2}' -Ou - | bcftools sort -Oz -o {output} - "
-
-rule snp_positions:
-    input:
-        rules.filter_tags.output
-    output:
-        "Genotypes/Combined/snp_positions.txt"
-    shell:
-        "bcftools view -H {input} |cut -f 1,2,3 > {output}"
 
 rule tabix_vcf:
     input:
