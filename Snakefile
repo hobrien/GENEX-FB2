@@ -269,7 +269,7 @@ rule plink_import:
     params:
         prefix = "Genotypes/Plink/genotypes",         
     shell:
-        "plink --bcf {input} --double-id --make-bed --out {params.prefix}"
+        "plink --vcf {input} --double-id --make-bed --out {params.prefix}"
 
 rule plink_ld_prune:
     input:
