@@ -447,15 +447,17 @@ rule q_values:
         "FastQTL/results.txt"
     params:
         fdr=.05
+    log:
+        "Logs/FastQTL/q_values.txt"
     shell:
-        "Rscript R/calulateNominalPvalueThresholds.R {input.eqtls} {input.snp_pos} {params.fdr} {output}"
+        "(Rscript R/calulateNominalPvalueThresholds.R {input.eqtls} {input.snp_pos} {params.fdr} {output}) > {log}"
 
-rule gtex2bed:
 """CrossMap is picky about the formatting of bed files, so I've had to discard some information
 I was able to put the geneId in the score column and the nominal_p, slope, slope_se and q
 into columns 7-10. Other columns can be recovered if needed by doing a join on the snp_id 
 and gene_id columns
 """
+rule gtex2bed:
     input:
         "GTEx_Analysis_v7_eQTL/{tissue}.v7.signif_variant_gene_pairs.txt.gz"
     output:
@@ -485,3 +487,4 @@ rule lift_over_bed:
         "Logs/LiftoverBED/{tissue}_liftover.txt"
     shell:
         "(CrossMap.py bed {input.chain_file} {input.bed} {output}) 2> {log}"
+

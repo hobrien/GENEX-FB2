@@ -36,11 +36,11 @@ colnames(D) <- c("geneID", "cisVariants", "Beta1", "Beta2", "Dummy", "topSNP",
 # Add SNP positions
 snp_pos <- read_tsv(args[2], col_names=FALSE)
 
-snp_pos <- mutate(snp_pos, pos = paste(X1, X2, sep=':')) %>%
-  select(topSNP=X3, pos)
+snp_pos <- mutate(snp_pos, chr=paste0('chr', X1), start = X2-1) %>%
+  select(topSNP=X3, chr, start, X2)
 D <- left_join(D, snp_pos)
 
 #Write output
-write.table(D[, c(1,2,3,4,6,7,9,8,13,10,11,12,14)], args[4], quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(D[, c(14,15,16,1,2,3,4,6,7,9,8,13,10,11,12)], args[4], quote=FALSE, row.names=FALSE, col.names=FALSE)
 
 cat("Done\n")
