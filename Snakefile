@@ -53,7 +53,8 @@ rule all:
        "FastQTL/results.txt",
        "FastQTL/FastQTL.all.txt.gz",
        "Peer/factors_nc.txt",
-       "Genotypes/Plink/scz_ld.tags"
+       "Genotypes/Plink/scz_ld.tags",
+       expand("GTEx_Analysis_v7_eQTL/{tissue}.bed", tissue = ['Brain_Cortex'])
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -448,3 +449,39 @@ rule q_values:
         fdr=.05
     shell:
         "Rscript R/calulateNominalPvalueThresholds.R {input.eqtls} {input.snp_pos} {params.fdr} {output}"
+
+rule gtex2bed:
+"""CrossMap is picky about the formatting of bed files, so I've had to discard some information
+I was able to put the geneId in the score column and the nominal_p, slope, slope_se and q
+into columns 7-10. Other columns can be recovered if needed by doing a join on the snp_id 
+and gene_id columns
+"""
+    input:
+        "GTEx_Analysis_v7_eQTL/{tissue}.v7.signif_variant_gene_pairs.txt.gz"
+    output:
+        "GTEx_Analysis_v7_eQTL/{tissue}_hg19.bed"
+    run:
+        import fileinput
+        import warnings
+        import gzip
+        with open(output[0], 'w') as bed_file:
+            with gzip.open(input[0], 'rt') as f:
+                for line in f.readlines():
+                    line = line.strip()
+                    fields = line.split('\t')
+                    try:
+                        (chr, end, ref, alt, build) = fields[0].split('_')
+                        bed_file.write('\t'.join(['chr' + chr, str(int(end)-1), end, fields[0], fields[1], '+']+fields[6:9]+fields[11:])+'\n')
+                    except ValueError:
+                        warnings.warn("skipping the following line:\n" + line)
+
+rule lift_over_bed:
+    input:
+        bed=rules.gtex2bed.output,
+        chain_file=config["reference"]["chain_file"],
+    output:
+        "GTEx_Analysis_v7_eQTL/{tissue}.bed"
+    log:
+        "Logs/LiftoverBED/{tissue}_liftover.txt"
+    shell:
+        "(CrossMap.py bed {input.chain_file} {input.bed} {output}) 2> {log}"
