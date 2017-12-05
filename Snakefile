@@ -50,7 +50,7 @@ Notes
 """
 rule all:
     input:
-       "FastQTL/results.txt",
+       "FastQTL/results.bed",
        "FastQTL/FastQTL.all.txt.gz",
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
@@ -444,7 +444,7 @@ rule q_values:
         eqtls=rules.cat_permutations.output,
         snp_pos=rules.snp_positions.output
     output:
-        "FastQTL/results.txt"
+        "FastQTL/results.bed"
     params:
         fdr=.05
     log:
@@ -487,4 +487,3 @@ rule lift_over_bed:
         "Logs/LiftoverBED/{tissue}_liftover.txt"
     shell:
         "(CrossMap.py bed {input.chain_file} {input.bed} {output}) 2> {log}"
-

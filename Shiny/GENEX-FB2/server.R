@@ -88,7 +88,7 @@ counts <- read_delim("./Data/counts.txt", "\t", escape_double = FALSE, trim_ws =
 
 colnames(counts) <- str_replace_all(colnames(counts), 'norm.', '')
 
-top_cis <- read_delim("./Data/cis_eqtl.txt", "\t", escape_double = FALSE, trim_ws = TRUE, 
+top_cis <- read_delim("./Data/results.bed", "\t", escape_double = FALSE, trim_ws = TRUE, 
                       col_names=c("Chr", "start", "pos", "geneID", "cisVariants", "Beta1", 
                                   "Beta2", "topSNP", "distance", "slope", "nominal_p", 
                                   "nominal_p_threshold", "padj_direct", "padj_beta", "qvalue")) %>%
