@@ -54,7 +54,7 @@ rule all:
        "FastQTL/FastQTL.all.txt.gz",
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
-       expand("GTEx_Analysis_v7_eQTL/{tissue}.bed", tissue = ['Brain_Cortex'])
+       expand("GTEx_Analysis_v7_eQTL/{tissue}.bed", tissue = config['gtex_samples'])
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
