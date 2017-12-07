@@ -1,6 +1,7 @@
 library(readr)
 library(dplyr)
-library("optparse")
+library(stringr)
+library(optparse)
 
 # Test for eGene enrichment (ratio of sig to non-sig GTEx eGenes that are sig in query sample vs. ratio in eGenes that are non-sig in query)
 # I'm also determining the number of query topSNPs that are also sig in GTEx samples and the number that are sig for the same eGene
@@ -23,7 +24,8 @@ query <- read_tsv(opt$options$query,
                               "nominal_p_threshold", "padj_direct", "padj_beta", "qvalue"))
 
 overlaps <- data.frame()
-for ( sample in opt$args ) {
+for ( referenceFile in opt$args ) {
+  sample <- str_replace(basename(sampleFile), '\\..*', '')
   referenceAll <- read_tsv(paste0('GTEx_Analysis_v7_eQTL/', sample, '.v7.egenes.txt.gz'))
   
   Combined <-  referenceAll %>% select(gene_id, gtex_qvalue=qval) %>%
@@ -39,12 +41,16 @@ for ( sample in opt$args ) {
                                QuerySig-SigOverlap,
                                Overlap-GTExSig-QuerySig+SigOverlap), nrow=2))
   
-  referenceSig <- read_tsv(paste0('GTEx_Analysis_v7_eQTL/', sample, '.bed'), 
+  referenceSig <- read_tsv(referenceFile, 
                            col_names=c("Chr", "start", "pos", "SNP", "geneID", "strand",
                                        "nominal_p", "slope", "slope_se", "qvalue"))
   
-  SNPoverlap <-  referenceSig %>% select(Chr, pos, gtex_qvalue=qvalue) %>%
-    inner_join(filter(query, qvalue<.05)) %>% nrow()
+  SNPoverlap <- referenceSig %>% 
+    select(Chr, pos, gtex_qvalue=qvalue) %>%
+    inner_join(filter(query, qvalue<.05)) %>%
+    group_by(Chr, pos) %>%
+    slice(1) %>%
+    nrow()
   
   SNP_eGene_overlap <-  referenceSig %>% select(Chr, pos, geneID, gtex_qvalue=qvalue) %>%
     mutate(geneID=str_replace(geneID, "\\.\\d+", "")) %>%
