@@ -54,8 +54,8 @@ rule all:
        "FastQTL/FastQTL.all.txt.gz",
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
-       expand("GTEx_Analysis_v7_eQTL/{tissue}.bed", tissue = config['gtex_samples'])
-
+       "Results/GTExOverlaps.txt"
+       
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
     when the header does not include the following lines:
@@ -459,9 +459,9 @@ and gene_id columns
 """
 rule gtex2bed:
     input:
-        "GTEx_Analysis_v7_eQTL/{tissue}.v7.signif_variant_gene_pairs.txt.gz"
+        "GTEx_Analysis_v7_eQTL/{tissue}.{dataset}.txt.gz"
     output:
-        "GTEx_Analysis_v7_eQTL/{tissue}_hg19.bed"
+        "GTEx_Analysis_v7_eQTL/{tissue}.{dataset}_hg19.bed"
     run:
         import fileinput
         import warnings
@@ -482,8 +482,17 @@ rule lift_over_bed:
         bed=rules.gtex2bed.output,
         chain_file=config["reference"]["chain_file"],
     output:
-        "GTEx_Analysis_v7_eQTL/{tissue}.bed"
+        "GTEx_Analysis_v7_eQTL/{tissue}.{dataset}.bed"
     log:
         "Logs/LiftoverBED/{tissue}_liftover.txt"
     shell:
         "(CrossMap.py bed {input.chain_file} {input.bed} {output}) 2> {log}"
+
+rule summarise_overlaps:
+    input:
+        sig_pairs = expand("GTEx_Analysis_v7_eQTL/{tissue}.v7.signif_variant_gene_pairs.bed", tissue = config['gtex_samples']),
+        query = rules.q_values.output
+    output:
+        "Results/GTExOverlaps.txt"
+    shell:
+        "Rscript R/GetOverlaps.R --query {input.query} --outfile {output} {input.sig_pairs}"
