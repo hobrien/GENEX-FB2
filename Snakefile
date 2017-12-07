@@ -459,9 +459,9 @@ and gene_id columns
 """
 rule gtex2bed:
     input:
-        "GTEx_Analysis_v7_eQTL/{tissue}.{dataset}.txt.gz"
+        "GTEx_Analysis_v7_eQTL/{tissue}.v7.signif_variant_gene_pairs.txt.gz"
     output:
-        "GTEx_Analysis_v7_eQTL/{tissue}.{dataset}_hg19.bed"
+        "GTEx_Analysis_v7_eQTL/{tissue}_hg19.bed"
     run:
         import fileinput
         import warnings
@@ -482,7 +482,7 @@ rule lift_over_bed:
         bed=rules.gtex2bed.output,
         chain_file=config["reference"]["chain_file"],
     output:
-        "GTEx_Analysis_v7_eQTL/{tissue}.{dataset}.bed"
+        "GTEx_Analysis_v7_eQTL/{tissue}.bed"
     log:
         "Logs/LiftoverBED/{tissue}_liftover.txt"
     shell:
@@ -490,7 +490,7 @@ rule lift_over_bed:
 
 rule summarise_overlaps:
     input:
-        sig_pairs = expand("GTEx_Analysis_v7_eQTL/{tissue}.v7.signif_variant_gene_pairs.bed", tissue = config['gtex_samples']),
+        sig_pairs = expand("GTEx_Analysis_v7_eQTL/{tissue}.bed", tissue = config['gtex_samples']),
         query = rules.q_values.output
     output:
         "Results/GTExOverlaps.txt"
