@@ -17,7 +17,6 @@ option_list <- list(
 
 opt_parser <- OptionParser(option_list=option_list)
 opt <- parse_args(opt_parser, positional_arguments=TRUE)
-opt$args<-c("Brain_Cortex")
 query <- read_tsv(opt$options$query, 
                   col_names=c("Chr", "start", "pos", "geneID", "cisVariants", "Beta1", 
                               "Beta2", "topSNP", "distance", "slope", "nominal_p", 
@@ -25,7 +24,7 @@ query <- read_tsv(opt$options$query,
 
 overlaps <- data.frame()
 for ( referenceFile in opt$args ) {
-  sample <- str_replace(basename(sampleFile), '\\..*', '')
+  sample <- str_replace(basename(referenceFile), '\\..*', '')
   referenceAll <- read_tsv(paste0('GTEx_Analysis_v7_eQTL/', sample, '.v7.egenes.txt.gz'))
   
   Combined <-  referenceAll %>% select(gene_id, gtex_qvalue=qval) %>%
