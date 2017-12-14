@@ -1,4 +1,5 @@
 suppressMessages(library(dplyr))
+suppressMessages(library(readr))
 suppressMessages(library(qvalue))
 suppressMessages(library(tools))
 suppressMessages(library(argparser))
@@ -52,8 +53,8 @@ D[, 'pval_nominal_threshold'] <- signif(qbeta(pthreshold, D[, 'beta_shape1'], D[
 snp_pos <- read_tsv(args$snpfile, col_names=FALSE)
 
 snp_pos <- mutate(snp_pos, chr=paste0('chr', X1), start = X2-1) %>%
-  select(topSNP=X3, chr, start, end=X2)
-D <- right_join(D, snp_pos) %>%
+  select(variant_id=X3, chr, start, end=X2)
+D <- left_join(D, snp_pos) %>%
   select(chr, start, end, everything())
 
-write.table(D, gzfile(args$outfile), quote=FALSE, row.names=FALSE, col.names=TRUE, sep="\t")
+write.table(D, gzfile(args$outfile), quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
