@@ -50,7 +50,7 @@ Notes
 """
 rule all:
     input:
-       "FastQTL/results.bed",
+       "FastQTL/egenes.bed.gz",
        "FastQTL/FastQTL.all.txt.gz",
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
