@@ -1,46 +1,59 @@
+suppressMessages(library(dplyr))
 suppressMessages(library(qvalue))
-library(readr)
-library(dplyr)
+suppressMessages(library(tools))
+suppressMessages(library(argparser))
 
-args <- commandArgs(trailingOnly = TRUE)
+# parse inputs
+p <- arg_parser("Annotates FastQTL permutation output and runs qvalue")
+p <- add_argument(p, "fastqtlOutput", help="")
+p <- add_argument(p, "snpfile", help="")
+p <- add_argument(p, "fdr", type="numeric", help="")
+p <- add_argument(p, "outfile", help="")
+p <- add_argument(p, "--lambda", type="numeric", help="", default=NULL)
+args <- parse_args(p)
 
-ifile = args[1]
-snp_file = args[2]
-fdr = as.numeric(args[3]);
+cat("Processing FastQTL output (", args$fastqtlOutput, "), with FDR=", args$fdr, "\n", sep="")
 
-cat("Processing fastQTL concatenated output [", ifile, "] controlling for FDR =", fdr * 100, "%\n");
+# input files have no headers
+D <- read.table(args$fastqtlOutput, header=FALSE, stringsAsFactors=FALSE)
+if (dim(D)[2]==17) {
+  colnames(D) <- c('gene_id', 'num_var', 'beta_shape1', 'beta_shape2', 'true_df', 'pval_true_df', 'variant_id', 'tss_distance',
+                   'minor_allele_samples', 'minor_allele_count', 'maf', 'ref_factor',
+                   'pval_nominal', 'slope', 'slope_se', 'pval_perm', 'pval_beta')
+} else {
+  stop("FastQTL output in unrecognized format (mismatched number of columns).")
+}
 
-#Read data
-D = read.table(ifile, hea=FALSE, stringsAsFactors=FALSE)
+# remove genes w/o variants
+nanrows <- is.na(D[, 'pval_beta'])
+D <- D[!nanrows, ]
+cat("  * Number of genes tested: ", nrow(D), " (excluding ", sum(nanrows), " genes w/o variants)\n", sep="")
+cat("  * Correlation between Beta-approximated and empirical p-values: ", round(cor(D[, 'pval_perm'], D[, 'pval_beta']), 4), "\n", sep="")
 
-D = D[which(!is.na(D[, 10])),]
-cat("  * Number of molecular phenotypes =" , nrow(D), "\n")
-cat("  * Correlation between Beta approx. and Empirical p-values =", round(cor(D[, 9], D[, 10]), 4), "\n")
+# calculate q-values
+if (is.null(args$lambda) || is.na(args$lambda)) {
+  Q <- qvalue(D[, 'pval_beta'])
+} else {
+  cat("  * Calculating q-values with lambda = ", args$lambda, "\n", sep="")
+  Q <- qvalue(D[, 'pval_beta'], lambda=args$lambda)
+}
 
-#Run qvalue on pvalues for best signals
-Q = qvalue(D[, 10])
-D$qval = Q$qvalue
-cat("  * Proportion of significant phenotypes =" , round((1 - Q$pi0) * 100, 2), "%\n")
+D$qval <- signif(Q$qvalues, 6)
+cat("  * Proportion of significant phenotypes (1-pi0): " , round((1 - Q$pi0), 2), "\n", sep="")
+cat("  * eGenes @ FDR ", args$fdr, ":   ", sum(D[, 'qval']<args$fdr), "\n", sep="")
 
-#Determine significance threshold
-set0 = D[which(D$qval <= fdr),] 
-set1 = D[which(D$qval > fdr),]
-pthreshold = (sort(set1$V10)[1] - sort(-1.0 * set0$V10)[1]) / 2
-cat("  * Corrected p-value threshold = ", pthreshold, "\n")
+# determine global min(p) significance threshold and calculate nominal p-value threshold for each gene
+ub <- sort(D[D$qval > args$fdr, 'pval_beta'])[1]  # smallest p-value above FDR
+lb <- -sort(-D[D$qval <= args$fdr, 'pval_beta'])[1]  # largest p-value below FDR
+pthreshold <- (lb+ub)/2
+cat("  * min p-value threshold @ FDR ", args$fdr, ": ", pthreshold, "\n", sep="")
+D[, 'pval_nominal_threshold'] <- signif(qbeta(pthreshold, D[, 'beta_shape1'], D[, 'beta_shape2'], ncp=0, lower.tail=TRUE, log.p=FALSE), 6)
 
-#Calculate nominal pvalue thresholds
-D$nthresholds = qbeta(pthreshold, D$V3, D$V4, ncp = 0, lower.tail = TRUE, log.p = FALSE)
-
-colnames(D) <- c("geneID", "cisVariants", "Beta1", "Beta2", "Dummy", "topSNP", 
-                 "distance", "nominal_p", "slope", "padj_direct", "padj_beta", "qvalue", "nominal_p_threshold")
-# Add SNP positions
-snp_pos <- read_tsv(args[2], col_names=FALSE)
+snp_pos <- read_tsv(args$snpfile, col_names=FALSE)
 
 snp_pos <- mutate(snp_pos, chr=paste0('chr', X1), start = X2-1) %>%
-  select(topSNP=X3, chr, start, X2)
-D <- left_join(D, snp_pos)
+  select(topSNP=X3, chr, start, end=X2)
+D <- right_join(D, snp_pos) %>%
+  select(chr, start, end, everything())
 
-#Write output
-write.table(D[, c(14,15,16,1,2,3,4,6,7,9,8,13,10,11,12)], args[4], sep='\t', quote=FALSE, row.names=FALSE, col.names=FALSE)
-
-cat("Done\n")
+write.table(D, gzfile(args$outfile), quote=FALSE, row.names=FALSE, col.names=TRUE, sep="\t")
