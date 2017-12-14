@@ -403,6 +403,7 @@ rule fast_qtl:
         " --bed {input.counts} --chunk {params.chunk} {params.num_chunks}"
         " --out {output} -- log {log}"
 
+# columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
 rule cat_fast_qtl:
     input:
         expand("FastQTL/fastQTL.{chunk}.txt.gz", chunk=range(1,101))
@@ -431,6 +432,7 @@ rule fast_qtl_permutations:
         " --bed {input.counts} --chunk {params.chunk} {params.num_chunks}"
         " --permute {params.min} {params.max} --out {output} -- log {log}"
 
+#columns: gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta
 rule cat_permutations:
     input:
         expand("FastQTL/permutations.{chunk}.txt.gz", chunk=range(1,101))
@@ -444,7 +446,7 @@ rule q_values:
         eqtls=rules.cat_permutations.output,
         snp_pos=rules.snp_positions.output
     output:
-        "FastQTL/results.bed"
+        "FastQTL/egenes.bed.gz"
     params:
         fdr=.05
     log:
