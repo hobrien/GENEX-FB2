@@ -18,9 +18,9 @@ option_list <- list(
 opt_parser <- OptionParser(option_list=option_list)
 opt <- parse_args(opt_parser, positional_arguments=TRUE)
 query <- read_tsv(opt$options$query, 
-                  col_names=c("Chr", "start", "pos", "geneID", "cisVariants", "Beta1", 
-                              "Beta2", "topSNP", "distance", "slope", "nominal_p", 
-                              "nominal_p_threshold", "padj_direct", "padj_beta", "qvalue"))
+                  col_names=c("chr", "start", "end", "gene_id", "variant_id", "tss_distance", 
+                              "ma_samples", "ma_count", "maf", "pval_nominal", "slope", 
+                              "slope_se", "qval", "pval_nominal_threshold"))
 
 overlaps <- data.frame()
 for ( referenceFile in opt$args ) {

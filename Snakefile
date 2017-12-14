@@ -441,6 +441,7 @@ rule cat_permutations:
     shell:
         "zcat {input} | gzip -c > {output}"
 
+# columns: chr, start, end, gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se, qval, pval_nominal_threshold
 rule q_values:
     input:
         eqtls=rules.cat_permutations.output,
