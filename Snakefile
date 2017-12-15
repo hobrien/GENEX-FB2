@@ -313,10 +313,10 @@ rule peer:
         pca=rules.plink_pca.output,
         counts = rules.filter_counts.output
     output:
-        "Peer/residuals.txt"
+        "Peer/factors.txt"
     params:
         sample_info=config["sample_info"],
-        factors = "Peer/factors.txt",
+        residuals = "Peer/residuals.txt",
         alpha = "Peer/alpha.txt",
         num_peer = 10
     log:
@@ -326,8 +326,20 @@ rule peer:
     shell:
         "(Rscript /c8000xd3/rnaseq-heath/GENEX-FB2/R/PEER.R -p {input.pca} "
         "-n {params.num_peer} -c {input.counts} -b {params.sample_info} "
-        "-r {output} -f {params.factors} -a {params.alpha}) > {log}"
+        "-f {output} -r {params.residuals} -a {params.alpha}) > {log}"
 
+rule format_cov:
+    input:
+        rules.peer.output
+    output:
+        "FastQTL/covariates.txt"
+    run:
+        import pandas as pd
+        cov=pd.read_csv(input[0], sep='\t')
+        cov['V1'] = 'sex' + cov['V1'].astype(str) # change sex to string (categorical)
+        cov['V4'] = 'batch' + cov['V4'].astype(str) # change batch to string (categorical)
+        cov.transpose().to_csv(output[0], sep='\t', header=False)
+        
 rule peer_nc:
     input:
         counts = rules.filter_counts.output
@@ -348,7 +360,7 @@ rule peer_nc:
 
 rule make_bed:
     input:
-        gene_counts=rules.peer.output,
+        gene_counts=rules.filter_counts.output,
         geneloc="Data/geneloc.txt"
     output:
         "Data/expression_residuals.bed"
@@ -388,7 +400,8 @@ rule fast_qtl:
         counts = rules.bgzip_counts.output,
         count_index = rules.index_counts.output,
         genotypes = rules.filter_tags.output,
-        genotype_index = rules.tabix_vcf.output
+        genotype_index = rules.tabix_vcf.output,
+        covariates = rules.format_cov.output
     output:
         "FastQTL/fastQTL.{chunk}.txt.gz"
     params:
@@ -400,8 +413,8 @@ rule fast_qtl:
         "Logs/FastQTL/fastQTL_{chunk}.txt"
     shell:
         "fastQTL --vcf {input.genotypes} "
-        " --bed {input.counts} --chunk {params.chunk} {params.num_chunks}"
-        " --out {output} -- log {log}"
+        "--bed {input.counts} --chunk {params.chunk} {params.num_chunks} "
+        "--cov {input.covariates} --out {output} -- log {log} --normal"
 
 # columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
 rule cat_fast_qtl:
@@ -417,7 +430,8 @@ rule fast_qtl_permutations:
         counts = rules.bgzip_counts.output,
         count_index = rules.index_counts.output,
         genotypes = rules.filter_tags.output,
-        genotype_index = rules.tabix_vcf.output
+        genotype_index = rules.tabix_vcf.output,
+        covariates = rules.format_cov.output
     output:
         "FastQTL/permutations.{chunk}.txt.gz"
     params:
@@ -428,7 +442,7 @@ rule fast_qtl_permutations:
     log:
         "Logs/FastQTL/fastQTL_{chunk}.txt"
     shell:
-        "fastQTL --vcf {input.genotypes} "
+        "fastQTL --vcf {input.genotypes} --cov {input.covariates} --normal"
         " --bed {input.counts} --chunk {params.chunk} {params.num_chunks}"
         " --permute {params.min} {params.max} --out {output} -- log {log}"
 
@@ -441,7 +455,7 @@ rule cat_permutations:
     shell:
         "zcat {input} | gzip -c > {output}"
 
-# columns: chr, start, end, gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se, qval, pval_nominal_threshold
+# columns: chr, start, end, gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta, qval, pval_nominal_threshold
 rule q_values:
     input:
         eqtls=rules.cat_permutations.output,
