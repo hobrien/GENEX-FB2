@@ -1,0 +1,77 @@
+import GetSequences.py
+configfile: "config.yaml"
+
+files=get_sequences(config['seqfile'])
+
+rule all:
+    input:
+        expand("GTcheck/{sample}.png", sample=files.keys())
+
+rule hisat:
+    input:
+        reads = lambda wildcards: files[wildcards.sample]
+    output:
+        temp("BAM/{sample}.bam")
+    params:
+        idx = config['reference']['index'],
+        extra = '--known-splicesite-infile ' + config['reference']['splice_sites']
+    benchmark:
+        "Benchmarks/{sample}.hisat.benchmark.txt"
+    log:
+        "Logs/{sample}_hisat_map.txt"
+    threads: 8
+    wrapper:
+"0.17.4/bio/hisat2"
+
+rule sort_bam:
+    input:
+        rules.hisat.output
+    output:
+        os.path.splitext(rules.hisat.output) + ".sort.bam"
+    params:
+        "-m 4G"
+    threads: 8
+    wrapper:
+        "0.17.4/bio/samtools/sort"
+        
+rule samtools_index:
+    input:
+        rules.sort_bam.output
+    output:
+        rules.sort_bam.output + ".bai"
+    wrapper:
+"0.17.4/bio/samtools/index"
+
+rule call_snps:
+    input:
+        bam=rules.sort_bam.output,
+        index=rules.samtools_index.output
+    output:
+        "SNPcalls/{sample}.vcf.gz"
+    params:
+        fasta = config['reference']['genome']
+    shell:
+        "samtools mpileup -uf {params.fasta} {input.bam} | "
+        "bcftools call -mv -Oz > {output}"
+
+rule index_vcf:
+    input:
+        rules.call_snps.output
+    output:
+        rules.call_snps.output + ".tbi"
+    shell:
+        "bcftools index {input}"
+
+rule gt_check:
+    input:
+        vcf=rules.call_snps.output,
+        index=rules.index_vcf.output
+    output:
+        "GTcheck/{sample}.png" # No idea what this will be called
+    params:
+        sample = "{sample}",
+        prefix = "GTcheck/{sample}"
+        genotyping="Genotypes/Combined/combined_filtered.vcf.gz"
+    shell:
+        "bcftools gtcheck -g {params.genotyping} -p {params.prefix} -S {params.sample} {input.vcf} "
+
