@@ -33,8 +33,8 @@ for ( referenceFile in opt$args ) {
   
   Overlap <- nrow(Combined)
   GTExSig <- filter(Combined, gtex_qvalue < .05) %>% nrow()
-  QuerySig <- filter(Combined, qvalue<.05) %>% nrow()
-  SigOverlap <- filter(Combined, qvalue<.05 & gtex_qvalue < .05) %>% nrow()
+  QuerySig <- filter(Combined, qval<.05) %>% nrow()
+  SigOverlap <- filter(Combined, qval<.05 & gtex_qvalue < .05) %>% nrow()
   test <- fisher.test(matrix(c(SigOverlap, 
                                GTExSig-SigOverlap,
                                QuerySig-SigOverlap,
@@ -53,7 +53,7 @@ for ( referenceFile in opt$args ) {
   
   SNP_eGene_overlap <-  referenceSig %>% select(Chr, pos, geneID, gtex_qvalue=qvalue) %>%
     mutate(geneID=str_replace(geneID, "\\.\\d+", "")) %>%
-    inner_join(filter(query, qvalue<.05)) %>% nrow()
+    inner_join(filter(query, qval<.05)) %>% nrow()
   
   overlaps <- overlaps %>% bind_rows(data.frame(sample=c(sample), 
                                                 GTExSig=c(GTExSig), 
