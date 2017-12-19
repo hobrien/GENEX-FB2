@@ -18,19 +18,18 @@ option_list <- list(
 opt_parser <- OptionParser(option_list=option_list)
 opt <- parse_args(opt_parser, positional_arguments=TRUE)
 query <- read_tsv(opt$options$query, 
-                  col_names=c("chr", "start", "end", "gene_id", "variant_id", "tss_distance", 
-                              "ma_samples", "ma_count", "maf", "pval_nominal", "slope", 
-                              "slope_se", "qval", "pval_nominal_threshold"))
-
+                  col_names=c("Chr", "start", "pos", "gene_id", "num_var", "beta_shape1", 
+                  "beta_shape2", "true_df", "pval_true_df", "variant_id", "tss_distance", 
+                  "minor_allele_samples", "minor_allele_count", "maf", "ref_factor", 
+                  "pval_nominal", "slope", "slope_se", "pval_perm", "pval_beta", "qval", 
+                  "pval_nominal_threshold"))
 overlaps <- data.frame()
 for ( referenceFile in opt$args ) {
   sample <- str_replace(basename(referenceFile), '\\..*', '')
   referenceAll <- read_tsv(paste0('GTEx_Analysis_v7_eQTL/', sample, '.v7.egenes.txt.gz'))
-  
   Combined <-  referenceAll %>% select(gene_id, gtex_qvalue=qval) %>%
-    mutate(geneID=str_replace(gene_id, "\\.\\d+", "")) %>%
+    mutate(gene_id=str_replace(gene_id, "\\.\\d+", "")) %>%
     inner_join(query)
-  
   Overlap <- nrow(Combined)
   GTExSig <- filter(Combined, gtex_qvalue < .05) %>% nrow()
   QuerySig <- filter(Combined, qval<.05) %>% nrow()
@@ -46,13 +45,13 @@ for ( referenceFile in opt$args ) {
   
   SNPoverlap <- referenceSig %>% 
     select(Chr, pos, gtex_qvalue=qvalue) %>%
-    inner_join(filter(query, qvalue<.05)) %>%
+    inner_join(filter(query, qval<.05)) %>%
     group_by(Chr, pos) %>%
     slice(1) %>%
     nrow()
   
   SNP_eGene_overlap <-  referenceSig %>% select(Chr, pos, geneID, gtex_qvalue=qvalue) %>%
-    mutate(geneID=str_replace(geneID, "\\.\\d+", "")) %>%
+    mutate(gene_id=str_replace(geneID, "\\.\\d+", "")) %>%
     inner_join(filter(query, qval<.05)) %>% nrow()
   
   overlaps <- overlaps %>% bind_rows(data.frame(sample=c(sample), 
