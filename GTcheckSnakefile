@@ -2,7 +2,7 @@ from GetSequences import get_sequences
 configfile: "config.yaml"
 
 files=get_sequences(config['seqfile'])
-files = {k: v for k, v in files.items() if k not in ['17046','16385','17048','16024','16115','11449']}
+files = {k: v for k, v in files.items() if k not in ['17046','16385','17048','16024','16115','11449','16972']}
 
 rule all:
     input:

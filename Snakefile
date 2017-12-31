@@ -226,7 +226,7 @@ rule filter_counts:
     params:
         min=5,
         num=10,
-        excluded = "17046,16385,17048,16024,16115,11449"
+        excluded = "17046,16385,17048,16024,16115,11449,16972"
     shell:
         "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
         "--min {params.min} --num {params.num} --out {output} --exclude {params.excluded}"
