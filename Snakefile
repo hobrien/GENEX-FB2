@@ -28,9 +28,8 @@ rules:
     scz_ld: get list of SNPs tagged by schizophrenia index SNPs
     peer: PEER analysis on count data, using cofactors and PCA results
     peer_nc: PEER analysis on count data, without cofactors or PCA results
-    make_bed: convert PEER residuals to BED file that can be used as input for FastQTL
-    bgzip_counts: compress BED file of residualised counts
-    index_counts: index BED file of residualised counts
+    bgzip_counts: compress BED file of  counts
+    index_counts: index BED file of counts
     tabix_vcf: index final vcf file
     fast_qtl: run fast_qtl on each chunk of genome (calculate nominal p-values for all SNPs)
     cat_fast_qtl: concatinate fast_qtl nominal pass output
@@ -204,17 +203,17 @@ rule combine_chromosomes:
     input:
         expand("Genotypes/FilterDup/chr{chr_num}.filter_dup.bcf", chr_num=range(1,23)) # change this to range(1,23) to run on all samples
     output:
-        "Genotypes/Combined/combined.bcf"
+        "Genotypes/Combined/combined.vcf.gz"
     log:
         "Logs/CombineChromosomes/combined.txt"
     shell:
-        "(bcftools concat -Ob -o {output} {input}) 2> {log}"
+        "(bcftools concat {input} -Ou - | bcftools sort -Oz -o {output}) 2> {log}"
 
 rule index_vcf3:
     input:
          rules.combine_chromosomes.output
     output:
-        "Genotypes/Combined/combined.bcf.csi"
+        "Genotypes/Combined/combined.vcf.gz.csi"
     shell:
         "bcftools index {input}"
 
@@ -368,22 +367,9 @@ rule peer_nc:
         "-n {params.num_peer} -c {input.counts} "
         "-r {params.residuals} -f {output}  -a {params.alpha}) > {log}"
 
-rule make_bed:
-    input:
-        gene_counts=rules.filter_counts.output,
-        geneloc="Data/geneloc.txt"
-    output:
-        "Data/expression_residuals.bed"
-    params:
-        min=0,
-        num=0
-    shell:
-        "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
-        "--min {params.min} --num {params.num} --out {output}"
-
 rule bgzip_counts:
     input:
-        rules.make_bed.output
+        rules.filter_counts.output
     output:
         "Data/expression_residuals.bed.gz"
     shell:
