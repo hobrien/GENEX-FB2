@@ -1,15 +1,18 @@
 __default__:
     num_cores: 1
     maxvmem: 4G
-fast_qtl_permutations:
-    num_cores: 1
-    maxvmem: 2G
 summarise_overlaps:
     num_cores: 1
     maxvmem: 6G
 fast_qtl:
     num_cores: 1
     maxvmem: 6G
+sort_bam:
+    num_cores: 8
+    maxvmem: 8G
+hisat:
+    num_cores: 8
+    maxvmem: 8G
 peer:
     num_cores: 1
     maxvmem: 30G

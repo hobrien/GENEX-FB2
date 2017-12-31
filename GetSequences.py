@@ -19,6 +19,7 @@ def get_sequences(filename):
 if __name__ == '__main__':
     files = get_sequences("Data/sequences.txt")
     for sample in files.keys():
-        print(sample, files[sample])
+        print(sample, ','.join(files[sample][::2]), ','.join(files[sample][1::2]))
+        
 #    for sample in set([string.split('-')[0] for string in files.keys()]):
 #        print(sample, reduce(lambda x,y: x+y, [files[key] for key in filter(lambda key: key.startswith(sample), files.keys())]))
