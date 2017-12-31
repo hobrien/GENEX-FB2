@@ -1,11 +1,12 @@
-import GetSequences.py
+from GetSequences import get_sequences
 configfile: "config.yaml"
 
 files=get_sequences(config['seqfile'])
+files = {k: v for k, v in files.items() if k not in ['17046','16385','17048','16024','16115','11449']}
 
 rule all:
     input:
-        expand("GTcheck/{sample}.png", sample=files.keys())
+        "GTcheck/summary.png"
 
 rule hisat:
     input:
@@ -13,21 +14,26 @@ rule hisat:
     output:
         temp("BAM/{sample}.bam")
     params:
+        input1 = lambda wildcards: ','.join(files[wildcards.sample][::2]),
+        input2 = lambda wildcards: ','.join(files[wildcards.sample][1::2]),        
         idx = config['reference']['index'],
-        extra = '--known-splicesite-infile ' + config['reference']['splice_sites']
+        extra = '--known-splicesite-infile ' + config['reference']['splice_sites'],
+        threads = 8
     benchmark:
         "Benchmarks/{sample}.hisat.benchmark.txt"
     log:
         "Logs/{sample}_hisat_map.txt"
-    threads: 8
-    wrapper:
-"0.17.4/bio/hisat2"
+    shell:
+        "(hisat2 {params.extra} --threads {params.threads}"
+        " -x {params.idx} -1 {params.input1} -2 {params.input2}"
+        " | samtools view -Sbh -o {output} -)"
+        " 2> {log}"
 
 rule sort_bam:
     input:
         rules.hisat.output
     output:
-        os.path.splitext(rules.hisat.output) + ".sort.bam"
+        "BAM/{sample}.sort.bam"
     params:
         "-m 4G"
     threads: 8
@@ -38,9 +44,9 @@ rule samtools_index:
     input:
         rules.sort_bam.output
     output:
-        rules.sort_bam.output + ".bai"
+        "BAM/{sample}.sort.bam.bai"
     wrapper:
-"0.17.4/bio/samtools/index"
+        "0.17.4/bio/samtools/index"
 
 rule call_snps:
     input:
@@ -51,14 +57,15 @@ rule call_snps:
     params:
         fasta = config['reference']['genome']
     shell:
-        "samtools mpileup -uf {params.fasta} {input.bam} | "
-        "bcftools call -mv -Oz > {output}"
+        "samtools mpileup -uf {params.fasta} {input.bam} | bcftools call -mv -Ov | "
+        "awk '{{gsub(/##contig=<ID=chr/,\"##contig=<ID=\"); gsub(/^chr/,\"\"); print}}' | "
+        "bcftools view -Oz - > {output}"
 
 rule index_vcf:
     input:
         rules.call_snps.output
     output:
-        rules.call_snps.output + ".tbi"
+        "SNPcalls/{sample}.vcf.gz.csi"
     shell:
         "bcftools index {input}"
 
@@ -67,11 +74,20 @@ rule gt_check:
         vcf=rules.call_snps.output,
         index=rules.index_vcf.output
     output:
-        "GTcheck/{sample}.png" # No idea what this will be called
+        "GTcheck/{sample}.tab"
     params:
         sample = "{sample}",
-        prefix = "GTcheck/{sample}"
+        prefix = "GTcheck/{sample}",
         genotyping="Genotypes/Combined/combined_filtered.vcf.gz"
     shell:
         "bcftools gtcheck -g {params.genotyping} -p {params.prefix} -S {params.sample} {input.vcf} "
+
+rule summarise_gt_check:
+    input:
+        expand("GTcheck/{sample}.tab", sample=files.keys())
+    output:
+        plot="GTcheck/summary.png",
+        table="GTcheck/summary.tsv"
+    shell:
+        "Rscript R/SummariseGTcheck.R -o {output.table} -p {output.plot} {input}"
 
