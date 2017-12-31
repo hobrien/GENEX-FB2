@@ -16,6 +16,7 @@ rules:
     excluded_sites: list non variable sites (?)/ sites >2 variants for exclusion
     filter_dup: remove non variable sites (?)/ sites >2 variants
     combine_chromosomes: combine vcf files for individual chromosomes unto a single vcf
+    index_vcf3: use bcftools to index combined vcf files
     get_gene_positions: extract coordinates of genes from gtf file
     filter_counts: filter low expression genes and remove excluded samples from count matrix
     select_samples: exclude sample from vcf and make sure order is the same as the counts file
@@ -209,6 +210,14 @@ rule combine_chromosomes:
     shell:
         "(bcftools concat -Ob -o {output} {input}) 2> {log}"
 
+rule index_vcf3:
+    input:
+         rules.combine_chromosomes.output
+    output:
+        "Genotypes/Combined/combined.bcf.csi"
+    shell:
+        "bcftools index {input}"
+
 rule get_gene_positions:
     input:
         gtf=config["reference"]["gtf"]
@@ -234,7 +243,8 @@ rule filter_counts:
 rule select_samples:
     input:
         expression=rules.filter_counts.output,
-        vcf=rules.combine_chromosomes.output
+        vcf=rules.combine_chromosomes.output,
+        index=rules.index_vcf3.output
     output:
         "Genotypes/Combined/combined_inc_samples.vcf.gz"
     shell:
