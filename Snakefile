@@ -234,7 +234,7 @@ rule get_gene_positions:
     output:
         "Data/geneloc.txt"
     shell:
-        "cat {input} | awk '{{if ($3 == \"gene\") print $10, $1, $4, $5}}' | sed 's/[\";]//g' > {output}"
+        "cat {input} | awk '{{if ($3 == \"gene\") print $10, $1, $4, $5, $7}}' | sed 's/[\";]//g' > {output}"
 
 rule filter_counts:
     input:
@@ -280,7 +280,7 @@ rule snp_positions:
     output:
         "Genotypes/Combined/snp_positions.txt"
     shell:
-        "bcftools view -H {input} |cut -f 1,2,3 > {output}"
+        "bcftools view -H {input} |cut -f 1,2,3,4,5 > {output}"
 
 rule plink_import:
     input:
