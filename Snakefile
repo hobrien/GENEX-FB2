@@ -2,6 +2,17 @@
 
 configfile: "config.yaml"
 
+
+# to make DAG: snakemake -np --dag | dot -Tsvg > dag.svg
+dag = 0
+if dag:
+    chr_num = 2
+    num_permutations = 2
+    config['gtex_samples'] = ['Brain_Cortex']
+else:
+   chr_num = 23
+   num_permutations = 101
+
 """
 rules:
     rename_samples: replace genotyping well IDs with BrianBank IDs in imputed vcf files
@@ -38,16 +49,6 @@ rules:
     cat_permutations: concatinate fast_qtl permutation pass output
     q_values: calculate FDR for each eQTL
 
-Todo:
-- need to double-check what nonSNP files actually check for. I knew at one point, but I can't remember
-- add genotyping run as cofactor?
-Notes
-- I'm currently limiting things to 20 simultaneous jobs (tho I could probably go higher)
-    - each chunk is taking 15 min (and 620MB VMEM), meaning the job should take 15*100/20/60 = 1.25 hrs
-- I've removed chrX and chrY from the expression data because they are not in the vcf
-- This probably means re-running PEER because that will change things somewhat
-- For now, I'm just going to modify the residuals file, but I will eventually have to modify the original vst counts file
-- bgzip ... && tabix doesn't work because the index ends up being older than the file therefor I'm making separate rules for indexing
 """
 rule all:
     input:
@@ -202,7 +203,7 @@ rule filter_dup:
 
 rule combine_chromosomes:
     input:
-        expand("Genotypes/FilterDup/chr{chr_num}.filter_dup.bcf", chr_num=range(1,23)) # change this to range(1,23) to run on all samples
+        expand("Genotypes/FilterDup/chr{chr_num}.filter_dup.bcf", chr_num=range(1,chr_num)) # change this to range(1,23) to run on all samples
     output:
         "Genotypes/Combined/combined.vcf.gz"
     log:
@@ -245,21 +246,37 @@ rule filter_counts:
     params:
         min=5,
         num=10,
-        excluded = "17046,16385,17048,16024,16115,11449,16972"
+        excluded = "17046,16385,17048,16024,16115,11449,16972,13008"
     shell:
         "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
         "--min {params.min} --num {params.num} --out {output} --exclude {params.excluded}"
 
+rule bgzip_counts:
+    input:
+        rules.filter_counts.output
+    output:
+        "Data/expression.bed.gz"
+    shell:
+        "bgzip {input}"
+
+rule index_counts:
+    input:
+        rules.bgzip_counts.output
+    output:
+        "Data/expression.bed.gz.tbi"
+    shell:
+        "tabix -p bed {input}"
+
 rule select_samples:
     input:
-        expression=rules.filter_counts.output,
+        expression=rules.bgzip_counts.output,
         vcf=rules.sort_vcf2.output,
         index=rules.index_vcf3.output
     output:
         "Genotypes/Combined/combined_inc_samples.vcf.gz"
     shell:
-        "bcftools view -s `head -1 {input.expression} | cut --complement -f 1-4 | perl -pe 's/\s+(?!$)/,/g'` "
-        "{input.vcf} -Ou - | bcftools sort -Oz -o {output} "
+        "bcftools view -s `zcat {input.expression} | head -1 | cut --complement -f 1-4 | perl -pe 's/\s+(?!$)/,/g'` "
+        "{input.vcf} -Ou | bcftools sort -Oz -o {output} "
 
 rule filter_tags:
     input:
@@ -331,7 +348,7 @@ rule scz_ld:
 rule peer:
     input:
         pca=rules.plink_pca.output,
-        counts = rules.filter_counts.output
+        counts = rules.bgzip_counts.output
     output:
         "Peer/factors.txt"
     params:
@@ -362,7 +379,7 @@ rule format_cov:
         
 rule peer_nc:
     input:
-        counts = rules.filter_counts.output
+        counts = rules.bgzip_counts.output
     output:
         "Peer/factors_nc.txt"
     params:
@@ -377,22 +394,6 @@ rule peer_nc:
         "(Rscript /c8000xd3/rnaseq-heath/GENEX-FB2/R/PEER.R  "
         "-n {params.num_peer} -c {input.counts} "
         "-r {params.residuals} -f {output}  -a {params.alpha}) > {log}"
-
-rule bgzip_counts:
-    input:
-        rules.filter_counts.output
-    output:
-        "Data/expression_residuals.bed.gz"
-    shell:
-        "bgzip {input}"
-
-rule index_counts:
-    input:
-        rules.bgzip_counts.output
-    output:
-        "Data/expression_residuals.bed.gz.tbi"
-    shell:
-        "tabix -p bed {input}"
 
 rule tabix_vcf:
     input:
@@ -426,7 +427,7 @@ rule fast_qtl:
 # columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
 rule cat_fast_qtl:
     input:
-        expand("FastQTL/fastQTL.{chunk}.txt.gz", chunk=range(1,101))
+        expand("FastQTL/fastQTL.{chunk}.txt.gz", chunk=range(1,num_permutations))
     output:
         "FastQTL/FastQTL.all.txt.gz"
     shell:
@@ -456,7 +457,7 @@ rule fast_qtl_permutations:
 #columns: gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta
 rule cat_permutations:
     input:
-        expand("FastQTL/permutations.{chunk}.txt.gz", chunk=range(1,101))
+        expand("FastQTL/permutations.{chunk}.txt.gz", chunk=range(1,num_permutations))
     output:
         "FastQTL/permutations.all.txt.gz"
     shell:
