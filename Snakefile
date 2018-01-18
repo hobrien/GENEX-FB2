@@ -433,6 +433,16 @@ rule cat_fast_qtl:
     shell:
         "zcat {input} | gzip -c > {output}"
 
+rule prepare_smr:
+    input:
+        rules.cat_fast_qtl.output,
+        rules.snp_positions.output,
+        rules.get_gene_positions.output
+    output:
+        "SMR/myquery.txt"
+    shell:
+        "Rscript R/PrepareSMR.R {input} {output}"
+
 rule fast_qtl_permutations:
     input:
         counts = rules.bgzip_counts.output,
