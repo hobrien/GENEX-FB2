@@ -30,6 +30,7 @@ eqtls <- read_tsv(eqtl_file, col_names = c('Gene', 'SNP', 'tss_distance', 'ma_sa
 
 combined <- eqtls %>% left_join(snp_pos) %>%
   left_join(gene_pos) %>%
-  select(SNP, Chr, BP, A1, A2, Freq, Probe=Gene, Probe_Chr, Probe_bp, Gene, Orientation, b, se, p)
+  mutate(Probe=Gene) %>%
+  select(SNP, Chr, BP, A1, A2, Freq, Probe, Probe_Chr, Probe_bp, Gene, Orientation, b, se, p)
 
-write_tsv(combined, out_file)
+write_tsv(combined, out_file, col_names=FALSE)
