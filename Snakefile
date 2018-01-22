@@ -448,7 +448,7 @@ rule cat_smr:
     input:
         expand("SMR/myquery.{chunk}.txt.gz", chunk=range(1,num_permutations))
     output:
-        "SMR/myquery.txt"
+        temp("SMR/myquery.txt")
     run:
         from collections import defaultdict
         unique = defaultdict(set)
@@ -478,6 +478,14 @@ rule make_besd:
     shell:
         "smr --qfile {input} --make-besd --out {params}"
 
+rule prepare_gwas:
+    input:
+        config['gwas']
+    output:
+        "SMR/CLOZUK_recoded.txt"
+    shell:
+        "Rscript R/PrepareGWAS.R {input} {output}"
+        
 rule fast_qtl_permutations:
     input:
         counts = rules.bgzip_counts.output,
