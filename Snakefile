@@ -56,7 +56,8 @@ rule all:
        "FastQTL/FastQTL.all.txt.gz",
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
-       "Results/GTExOverlaps.txt"
+       "Results/GTExOverlaps.txt",
+       "SMR/mybesd.besd"
        
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -435,13 +436,47 @@ rule cat_fast_qtl:
 
 rule prepare_smr:
     input:
-        rules.cat_fast_qtl.output,
+        rules.fast_qtl.output,
         rules.snp_positions.output,
-        rules.get_gene_positions.output
+        "Data/geneloc_tab.txt"
     output:
-        "SMR/myquery.txt"
+        "SMR/myquery.{chunk}.txt.gz"
     shell:
         "Rscript R/PrepareSMR.R {input} {output}"
+
+rule cat_smr:
+    input:
+        expand("SMR/myquery.{chunk}.txt.gz", chunk=range(1,num_permutations))
+    output:
+        "SMR/myquery.txt"
+    run:
+        from collections import defaultdict
+        unique = defaultdict(set)
+        import gzip
+        with open(output[0], 'w') as smr_file:
+            headers = ['SNP', 'Chr', 'BP', 'A1', 'A2', 'Freq', 'Probe', 'Probe_Chr', 'Probe_bp', 'Gene', 'Orientation', 'b', 'se', 'p']
+            smr_file.write('\t'.join(headers) + '\n')
+            for input_file in input:
+              with gzip.open(input_file, 'rt') as f:
+                for line in f.readlines():
+                    fields = line.split('\t')
+                    rsID = fields[0]
+                    geneID = fields[6] 
+                    if rsID in unique and geneID in unique[rsID]:
+                        next
+                    else:
+                        smr_file.write(line)
+                        unique[rsID].add(geneID)
+
+rule make_besd:
+    input:
+        rules.cat_smr.output
+    output:
+        "SMR/mybesd.besd"
+    params:
+        "SMR/mybesd"
+    shell:
+        "smr --qfile {input} --make-besd --out {params}"
 
 rule fast_qtl_permutations:
     input:
