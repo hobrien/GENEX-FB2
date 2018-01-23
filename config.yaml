@@ -8,7 +8,9 @@ reference:
     gtf: /c8000xd3/rnaseq-heath/Ref/Homo_sapiens/GRCh38/NCBI/GRCh38Decoy/Annotation/Genes.gencode/genes.gtf
     splice_sites: /c8000xd3/rnaseq-heath/Ref/Homo_sapiens/GRCh38/NCBI/GRCh38Decoy/Annotation/Genes.gencode/splicesites.txt
     index: /c8000xd3/rnaseq-heath/Ref/Homo_sapiens/GRCh38/NCBI/GRCh38Decoy/Sequence/WholeGenomeFasta/genome
-count_data: Data/counts_vst.txt
+count_data: 
+    gene: Data/counts_vst.txt
+    transcript: Data/counts_tr_vst.txt
 sample_info: Data/SampleInfo.txt
 seqfile: Data/sequences.txt
 genotyping_info: Data/GenotypingInfo.txt

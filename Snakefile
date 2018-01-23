@@ -30,7 +30,12 @@ rules:
     sort_vcf2: coordinate sort combined vcf (no idea why it's unsorted)
     index_vcf3: use bcftools to index combined vcf files
     get_gene_positions: extract coordinates of genes from gtf file
+    get_transcript_positions: extract coordinates of genes from gtf file
     filter_counts: filter low expression genes and remove excluded samples from count matrix
+    filter_transcript_counts: filter low expression genes and remove excluded samples from count matrix
+    bgzip_counts: compress BED file of  counts
+    bgzip_transcript_counts: compress BED file of  counts
+    index_counts: index BED file of counts
     select_samples: exclude sample from vcf and make sure order is the same as the counts file
     filter_tags: add info about MAF, HWE, etc. and filter SNPs
     snp_positions: extract genomic coordinates for each SNP (to be associated with eQTLs in q_values rule)
@@ -39,15 +44,22 @@ rules:
     plink_pca: PCA analysis on LD-pruned plink-formatted genotype data
     scz_ld: get list of SNPs tagged by schizophrenia index SNPs
     peer: PEER analysis on count data, using cofactors and PCA results
+    format_cov:
     peer_nc: PEER analysis on count data, without cofactors or PCA results
-    bgzip_counts: compress BED file of  counts
-    index_counts: index BED file of counts
     tabix_vcf: index final vcf file
     fast_qtl: run fast_qtl on each chunk of genome (calculate nominal p-values for all SNPs)
     cat_fast_qtl: concatinate fast_qtl nominal pass output
+    rule prepare_smr:
+    rule cat_smr:
+    rule make_besd:
+    rule prepare_gwas:
+    rule smr:
     fast_qtl_permutations: run permutation analysis on each chunk of genome (corrected p-values for top SNPs)
     cat_permutations: concatinate fast_qtl permutation pass output
     q_values: calculate FDR for each eQTL
+    rule gtex2bed:
+    rule lift_over_bed:
+    rule summarise_overlaps:
 
 """
 rule all:
@@ -57,7 +69,7 @@ rule all:
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
        "Results/GTExOverlaps.txt",
-       "SMR/mysmr.smr"
+       expand("SMR/mysmr_{level}.smr", level = ['gene', 'transcript'])
        
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -234,16 +246,18 @@ rule get_gene_positions:
     input:
         gtf=config["reference"]["gtf"]
     output:
-        "Data/geneloc.txt"
+        "Data/{level}loc.txt"
+    params:
+        level = "{level}"
     shell:
-        "cat {input} | awk '{{if ($3 == \"gene\") print $10, $1, $4, $5, $7}}' | sed 's/[\";]//g' > {output}"
+        "cat {input} | awk '{{if ($3 == \"{params.level}\") print $10, $1, $4, $5, $7}}' | sed 's/[\";]//g' > {output}"
 
 rule filter_counts:
     input:
-        gene_counts=config["count_data"],
+        gene_counts=config["count_data"]["{level}"],
         geneloc=rules.get_gene_positions.output
     output:
-        "Data/expression.bed"
+        "Data/expression_{level}.bed"
     params:
         min=5,
         num=10,
@@ -256,7 +270,7 @@ rule bgzip_counts:
     input:
         rules.filter_counts.output
     output:
-        "Data/expression.bed.gz"
+        "Data/expression_{level}.bed.gz"
     shell:
         "bgzip {input}"
 
@@ -264,15 +278,15 @@ rule index_counts:
     input:
         rules.bgzip_counts.output
     output:
-        "Data/expression.bed.gz.tbi"
+        "Data/expression_{level}.bed.gz.tbi"
     shell:
         "tabix -p bed {input}"
 
 rule select_samples:
     input:
-        expression=rules.bgzip_counts.output,
-        vcf=rules.sort_vcf2.output,
-        index=rules.index_vcf3.output
+        expression = "Data/expression_gene.bed.gz",
+        vcf = rules.sort_vcf2.output,
+        index = rules.index_vcf3.output
     output:
         "Genotypes/Combined/combined_inc_samples.vcf.gz"
     shell:
@@ -348,8 +362,8 @@ rule scz_ld:
 
 rule peer:
     input:
-        pca=rules.plink_pca.output,
-        counts = rules.bgzip_counts.output
+        pca = rules.plink_pca.output,
+        counts = "Data/expression_gene.bed.gz"
     output:
         "Peer/factors.txt"
     params:
@@ -380,7 +394,7 @@ rule format_cov:
         
 rule peer_nc:
     input:
-        counts = rules.bgzip_counts.output
+        counts = "Data/expression_gene.bed.gz"
     output:
         "Peer/factors_nc.txt"
     params:
@@ -412,14 +426,14 @@ rule fast_qtl:
         genotype_index = rules.tabix_vcf.output,
         covariates = rules.format_cov.output
     output:
-        "FastQTL/fastQTL.{chunk}.txt.gz"
+        "FastQTL/fastQTL.{level}.{chunk}.txt.gz"
     params:
         min = 1000,
         max = 10000,
         chunk = "{chunk}",
         num_chunks = 100
     log:
-        "Logs/FastQTL/fastQTL_{chunk}.txt"
+        "Logs/FastQTL/fastQTL_{level}_{chunk}.txt"
     shell:
         "fastQTL --vcf {input.genotypes} "
         "--bed {input.counts} --chunk {params.chunk} {params.num_chunks} "
@@ -428,9 +442,9 @@ rule fast_qtl:
 # columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
 rule cat_fast_qtl:
     input:
-        expand("FastQTL/fastQTL.{chunk}.txt.gz", chunk=range(1,num_permutations))
+        expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", chunk=range(1,num_permutations))
     output:
-        "FastQTL/FastQTL.all.txt.gz"
+        "FastQTL/FastQTL_{level}.all.txt.gz"
     shell:
         "zcat {input} | gzip -c > {output}"
 
@@ -438,17 +452,17 @@ rule prepare_smr:
     input:
         rules.fast_qtl.output,
         rules.snp_positions.output,
-        "Data/geneloc_tab.txt"
+        "Data/geneloc_{level}.txt"
     output:
-        "SMR/myquery.{chunk}.txt.gz"
+        "SMR/myquery.{level}.{chunk}.txt.gz"
     shell:
         "Rscript R/PrepareSMR.R {input} {output}"
 
 rule cat_smr:
     input:
-        expand("SMR/myquery.{chunk}.txt.gz", chunk=range(1,num_permutations))
+        expand("SMR/myquery.{level}.{chunk}.txt.gz", chunk=range(1,num_permutations))
     output:
-        temp("SMR/myquery.txt")
+        "SMR/myquery_{level}.txt"
     run:
         from collections import defaultdict
         unique = defaultdict(set)
@@ -472,9 +486,9 @@ rule make_besd:
     input:
         rules.cat_smr.output
     output:
-        "SMR/mybesd.besd"
+        "SMR/mybesd_{level}.besd"
     params:
-        "SMR/mybesd"
+        "SMR/mybesd_{level}"
     shell:
         "smr --qfile {input} --make-besd --out {params}"
 
@@ -491,11 +505,11 @@ rule smr:
         gwas = rules.prepare_gwas.output,
         besd = rules.make_besd.output
     output:
-        "SMR/mysmr.smr"
+        "SMR/mysmr_{level}.smr"
     params:
         plink_prefix = "Genotypes/Plink/genotypes",
-        besd_prefix = "SMR/mybesd",
-        out_prefix = "SMR/mysmr"
+        besd_prefix = "SMR/mybesd_{level}",
+        out_prefix = "SMR/mysmr_{level}"
     threads: 10    
     shell:
         "smr --bfile {params.plink_prefix} --gwas-summary {input.gwas} "
@@ -509,14 +523,14 @@ rule fast_qtl_permutations:
         genotype_index = rules.tabix_vcf.output,
         covariates = rules.format_cov.output
     output:
-        "FastQTL/permutations.{chunk}.txt.gz"
+        "FastQTL/permutations.{level}.{chunk}.txt.gz"
     params:
         min = 1000,
         max = 10000,
         chunk = "{chunk}",
         num_chunks = 100
     log:
-        "Logs/FastQTL/fastQTL_{chunk}.txt"
+        "Logs/FastQTL/fastQTL_{level}_{chunk}.txt"
     shell:
         "fastQTL --vcf {input.genotypes} --cov {input.covariates} --normal"
         " --bed {input.counts} --chunk {params.chunk} {params.num_chunks}"
@@ -525,9 +539,9 @@ rule fast_qtl_permutations:
 #columns: gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta
 rule cat_permutations:
     input:
-        expand("FastQTL/permutations.{chunk}.txt.gz", chunk=range(1,num_permutations))
+        expand("FastQTL/permutations.{level}.{chunk}.txt.gz", chunk=range(1,num_permutations))
     output:
-        "FastQTL/permutations.all.txt.gz"
+        "FastQTL/permutations_{level}.all.txt.gz"
     shell:
         "zcat {input} | gzip -c > {output}"
 
@@ -537,11 +551,11 @@ rule q_values:
         eqtls=rules.cat_permutations.output,
         snp_pos=rules.snp_positions.output
     output:
-        "FastQTL/egenes.bed.gz"
+        "FastQTL/egenes_{level}.bed.gz"
     params:
         fdr=.05
     log:
-        "Logs/FastQTL/q_values.txt"
+        "Logs/FastQTL/q_values_{level}.txt"
     shell:
         "(Rscript R/calulateNominalPvalueThresholds.R {input.eqtls} {input.snp_pos} {params.fdr} {output}) > {log}"
 
@@ -584,7 +598,7 @@ rule lift_over_bed:
 rule summarise_overlaps:
     input:
         sig_pairs = expand("GTEx_Analysis_v7_eQTL/{tissue}.bed", tissue = config['gtex_samples']),
-        query = rules.q_values.output
+        query = "FastQTL/egenes_gene.bed.gz"
     output:
         "Results/GTExOverlaps.txt"
     shell:
