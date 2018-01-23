@@ -57,7 +57,7 @@ rule all:
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
        "Results/GTExOverlaps.txt",
-       "SMR/mybesd.besd"
+       "SMR/mysmr.smr"
        
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -485,7 +485,22 @@ rule prepare_gwas:
         "SMR/CLOZUK_recoded.txt"
     shell:
         "Rscript R/PrepareGWAS.R {input} {output}"
-        
+
+rule smr:
+    input:
+        gwas = rules.prepare_gwas.output,
+        besd = rules.make_besd.output
+    output:
+        "SMR/mysmr.smr"
+    params:
+        plink_prefix = "Genotypes/Plink/genotypes",
+        besd_prefix = "SMR/mybesd",
+        out_prefix = "SMR/mysmr"
+    threads: 10    
+    shell:
+        "smr --bfile {params.plink_prefix} --gwas-summary {input.gwas} "
+        "--beqtl-summary {params.besd_prefix} --out {params.out_prefix} --thread-num {threads}" 
+
 rule fast_qtl_permutations:
     input:
         counts = rules.bgzip_counts.output,
