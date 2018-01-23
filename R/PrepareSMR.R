@@ -23,7 +23,9 @@ snp_pos <- mutate(snp_pos, chr=paste0('chr', Chr))
 
 gene_pos <- read_tsv(gene_file, col_names = c('Gene', 'Probe_Chr', 'start', 'end', 'Orientation'),
                     trim_ws = TRUE)
-gene_pos <- gene_pos %>% mutate(Probe_bp = ifelse(Orientation == '+', start, end), Gene = str_replace(Gene, '\\.\\d+', ''))
+gene_pos <- gene_pos %>% mutate(Probe_bp = ifelse(Orientation == '+', start, end), 
+                                Gene = str_replace(Gene, '\\.\\d+', ''),
+                                Probe_Chr = str_replace(Probe_Chr, 'chr', ''))
 
 eqtls <- read_tsv(eqtl_file, col_names = c('Gene', 'SNP', 'tss_distance', 'ma_samples', 
                                            'ma_count', 'Freq', 'p', 'b', 'se'), trim_ws=TRUE)
