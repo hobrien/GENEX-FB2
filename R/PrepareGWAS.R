@@ -29,10 +29,13 @@ CLOZUK <- read_tsv(gwas_summary_file,
 
 
 
-CLOZUK <- separate(CLOZUK, SNP, c('chr', 'pos', 'A1.1', 'A2.2'), extra='merge') %>%
-  dplyr::filter(CLOZUK, str_detect(chr, '^rs')) %>%
-  filter(!chr %in% CLOZUK_rsID$chr[duplicated(CLOZUK_rsID$chr)]) %>%
-  select(SNP=chr, A1, A2, freq=Freq.A1, b=OR, se=SE, p=P, n=Ntot) %>%
-  mutate(A1=toupper(A1), A2=toupper(A2))
+CLOZUK <- separate(CLOZUK, SNP, c('rsID', 'pos', 'A1.1', 'A2.2'), extra='merge') %>%
+  dplyr::filter(str_detect(rsID, '^rs')) 
+
+print("filtering duplicates")
+CLOZUK <- filter(CLOZUK, !rsID %in% CLOZUK$rsID[duplicated(CLOZUK$rsID)])
+print("taking lof of OR")
+CLOZUK <-  mutate(CLOZUK, A1=toupper(A1), A2=toupper(A2), b=log(OR)) %>%
+  select(SNP=rsID, A1, A2, freq=Freq.A1, b, se=SE, p=P, n=Ntot)
 
 write_tsv(CLOZUK, out_file, col_names=TRUE)
