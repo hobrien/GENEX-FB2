@@ -64,8 +64,8 @@ rules:
 """
 rule all:
     input:
-       "FastQTL/egenes.bed.gz",
-       "FastQTL/FastQTL.all.txt.gz",
+       expand("FastQTL/egenes_{level}.bed.gz", level = ['gene', 'transcript']),
+       expand("FastQTL/FastQTL_{level}.all.txt.gz", level = ['gene', 'transcript']),
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
        "Results/GTExOverlaps.txt",
@@ -254,7 +254,7 @@ rule get_gene_positions:
 
 rule filter_counts:
     input:
-        gene_counts=config["count_data"]["{level}"],
+        gene_counts = lambda wildcards: config["count_data"][wildcards.level],
         geneloc=rules.get_gene_positions.output
     output:
         "Data/expression_{level}.bed"
@@ -442,7 +442,7 @@ rule fast_qtl:
 # columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
 rule cat_fast_qtl:
     input:
-        expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", chunk=range(1,num_permutations))
+        lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
     output:
         "FastQTL/FastQTL_{level}.all.txt.gz"
     shell:
@@ -452,7 +452,7 @@ rule prepare_smr:
     input:
         rules.fast_qtl.output,
         rules.snp_positions.output,
-        "Data/geneloc_{level}.txt"
+        "Data/{level}loc.txt"
     output:
         "SMR/myquery.{level}.{chunk}.txt.gz"
     shell:
@@ -460,7 +460,7 @@ rule prepare_smr:
 
 rule cat_smr:
     input:
-        expand("SMR/myquery.{level}.{chunk}.txt.gz", chunk=range(1,num_permutations))
+        lambda wildcards: expand("SMR/myquery.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
     output:
         "SMR/myquery_{level}.txt"
     run:
@@ -539,7 +539,7 @@ rule fast_qtl_permutations:
 #columns: gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta
 rule cat_permutations:
     input:
-        expand("FastQTL/permutations.{level}.{chunk}.txt.gz", chunk=range(1,num_permutations))
+        expand("FastQTL/permutations.{level}.{chunk}.txt.gz", level=['gene', 'transcript'], chunk=range(1,num_permutations))
     output:
         "FastQTL/permutations_{level}.all.txt.gz"
     shell:
