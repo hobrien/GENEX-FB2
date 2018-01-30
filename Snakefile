@@ -528,7 +528,7 @@ rule cat_smr:
     output:
         "SMR/mysmr_{level}_all.smr.gz"
     shell:
-        "cat {input} | gzip -c > {output}"
+        "tail -n+2 {input} | grep -v '==>' | gzip -c > {output}"
 
 rule fast_qtl_permutations:
     input:

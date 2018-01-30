@@ -14,6 +14,7 @@ count_data:
 sample_info: Data/SampleInfo.txt
 seqfile: Data/sequences.txt
 genotyping_info: Data/GenotypingInfo.txt
+gwas: /neurocluster/databank/CLOZUK/GWAS/SUMSTATS/CLOZUK_PGC2noclo.wCHRX.w1000Gfrq.wNtot.METAL.assoc.dosage.gz
 gtex_samples:
     - Adipose_Subcutaneous
     - Adipose_Visceral_Omentum
