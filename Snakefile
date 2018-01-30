@@ -50,10 +50,11 @@ rules:
     fast_qtl: run fast_qtl on each chunk of genome (calculate nominal p-values for all SNPs)
     cat_fast_qtl: concatinate fast_qtl nominal pass output
     rule prepare_smr:
-    rule cat_smr:
+    rule dedup_fast_qtl:
     rule make_besd:
     rule prepare_gwas:
     rule smr:
+    rule cat_smr:
     fast_qtl_permutations: run permutation analysis on each chunk of genome (corrected p-values for top SNPs)
     cat_permutations: concatinate fast_qtl permutation pass output
     q_values: calculate FDR for each eQTL
@@ -69,7 +70,7 @@ rule all:
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
        "Results/GTExOverlaps.txt",
-       expand("SMR/mysmr_{level}.smr", level = ['gene', 'transcript'])
+       expand("SMR/mysmr_{level}_all.smr.gz", level = ['gene', 'transcript'])
        
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -458,37 +459,43 @@ rule prepare_smr:
     shell:
         "Rscript R/PrepareSMR.R {input} {output}"
 
-rule cat_smr:
+rule dedup_fast_qtl:
     input:
         lambda wildcards: expand("SMR/myquery.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
     output:
-        "SMR/myquery_{level}.txt"
+        "SMR/myquery_{level}_chr{chr_num}.txt"
+    params:
+        chr = "{chr_num}"
     run:
         from collections import defaultdict
-        unique = defaultdict(set)
         import gzip
         with open(output[0], 'w') as smr_file:
             headers = ['SNP', 'Chr', 'BP', 'A1', 'A2', 'Freq', 'Probe', 'Probe_Chr', 'Probe_bp', 'Gene', 'Orientation', 'b', 'se', 'p']
             smr_file.write('\t'.join(headers) + '\n')
+            unique = defaultdict(set)
             for input_file in input:
               with gzip.open(input_file, 'rt') as f:
+                new = defaultdict(set)
                 for line in f.readlines():
                     fields = line.split('\t')
+                    if fields[1] != params['chr']:
+                        continue
                     rsID = fields[0]
                     geneID = fields[6] 
                     if rsID in unique and geneID in unique[rsID]:
                         next
                     else:
                         smr_file.write(line)
-                        unique[rsID].add(geneID)
+                        new[rsID].add(geneID)
+                unique = new
 
 rule make_besd:
     input:
-        rules.cat_smr.output
+        rules.dedup_fast_qtl.output
     output:
-        "SMR/mybesd_{level}.besd"
+        "SMR/mybesd_{level}_chr{chr_num}.besd"
     params:
-        "SMR/mybesd_{level}"
+        "SMR/mybesd_{level}_chr{chr_num}"
     shell:
         "smr --qfile {input} --make-besd --out {params}"
 
@@ -505,15 +512,23 @@ rule smr:
         gwas = rules.prepare_gwas.output,
         besd = rules.make_besd.output
     output:
-        "SMR/mysmr_{level}.smr"
+        "SMR/mysmr_{level}_chr{chr_num}.smr"
     params:
         plink_prefix = "Genotypes/Plink/genotypes",
-        besd_prefix = "SMR/mybesd_{level}",
-        out_prefix = "SMR/mysmr_{level}"
+        besd_prefix = "SMR/mybesd_{level}_chr{chr_num}",
+        out_prefix = "SMR/mysmr_{level}_chr{chr_num}"
     threads: 10    
     shell:
         "smr --bfile {params.plink_prefix} --gwas-summary {input.gwas} "
         "--beqtl-summary {params.besd_prefix} --out {params.out_prefix} --thread-num {threads}" 
+
+rule cat_smr:
+    input:
+        lambda wildcards: expand("SMR/mysmr_{level}_chr{chr_num}.smr", level = wildcards.level, chr_num=range(1,chr_num))
+    output:
+        "SMR/mysmr_{level}_all.smr.gz"
+    shell:
+        "cat {input} | gzip -c > {output}"
 
 rule fast_qtl_permutations:
     input:
