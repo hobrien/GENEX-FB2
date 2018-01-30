@@ -37,11 +37,12 @@ if (opt$average){
 }
 
 print(paste("reading", opt$genes))
-genepos <- read_delim(opt$genes, " ", col_names = c("id", "chr", "s1", "s2", "orientation"), escape_double = FALSE, trim_ws = TRUE)
-genepos <- genepos %>% mutate(id= str_replace(id, '(ENSG\\d+)\\.\\d+', '\\1')) %>% 
+genepos <- read_tsv(opt$genes, col_names = c("id", "chr", "s1", "s2", "orientation"), trim_ws = TRUE)
+genepos <- genepos %>% mutate(id= str_replace(id, '(ENS[TG]\\d+)\\.\\d+', '\\1')) %>% 
   inner_join(counts, by=c("id" = 'ID')) %>%
   filter(chr %in% paste0('chr', seq(22))) %>%
   mutate(chr=str_replace(chr, 'chr', '')) %>%
-  select(`#Chr`=chr, start=s1, end=s2, ID=id, everything())
+  arrange(chr, s1) %>% 
+  select(`#Chr`=chr, start=s1, end=s2, ID=id, everything(), -orientation)
 
 write_tsv(genepos, opt$out)
