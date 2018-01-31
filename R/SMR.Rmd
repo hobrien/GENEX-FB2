@@ -1,14 +1,24 @@
 ---
-title: "R Notebook"
-output: html_notebook
+title: "eQTL / SMR analysis"
+output:
+  html_document:
+    df_print: paged
 ---
 
-```{r}
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.asp = 0.618, fig.path='Figs/',
+                      echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+```{r setup}
 library(tidyverse)
-source("plot_SMR.r") 
+library(ggbeeswarm)
+source("plot_SMR.r")
+source("FormatGGplot.R")
 
 PlotEQTL<-function(geneID, snp, pos, chr, counts, target, snp_header) {
   snp_pos <- paste(chr, pos, sep=":")
+  gene_name=filter(counts, Id==geneID) %>% `$`(SYMBOL)
   expression <- counts %>% filter(Id == geneID) %>%  
     dplyr::select(-Id, -SYMBOL) %>%
     gather("Sample", "value") %>%
@@ -30,7 +40,7 @@ PlotEQTL<-function(geneID, snp, pos, chr, counts, target, snp_header) {
                                 paste0(UQ(alt), UQ(alt)) ))
            )
   #mean <- data %>% group_by(genotype) %>% summarise(mean = mean(value))
-  title<-paste0(geneID, ' x ', snp)
+  title<-paste0(geneID, ' (', gene_name, ') x ', snp)
   plot<-  ggplot(data, aes(y=value, x=DS)) + 
     #geom_errorbar(aes(ymin=mean, ymax=mean), colour='black', size=1, width=.5, data=mean) +
     geom_smooth(method='lm', colour='black') +
@@ -46,19 +56,42 @@ PlotEQTL<-function(geneID, snp, pos, chr, counts, target, snp_header) {
   plot
 }
 
-geneID <- 'ENSG00000275126'
-snp <- 'rs200995'
-chr <- 6
-pos <- 27845916
 counts <- read_tsv("../Shiny/GENEX-FB2/Data/counts.txt") %>% select(-Chr, -gene_type, -ChrType)
 colnames(counts) <- str_replace_all(colnames(counts), 'norm.', '')
 target <- read_tsv('../Data/SampleInfo.txt', col_types = cols(Sample='c'))
 snp_header <- system("bcftools view -h ../Shiny/GENEX-FB2/Data/combined_filtered.vcf.gz | tail -1", intern=TRUE) %>%
   str_split('\t')
-PlotEQTL(geneID, snp, pos, chr, counts, target, snp_header)
+tx2gene <- read_tsv("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/tx2gene.txt",
+                    trim_ws = TRUE)
 
 ```
 
+# Gene-level analysis
+
+## FastQTL
+- 1698 eGenes
+- 5.7 % of 29788 tested genes (4-9% per chromosome)
+
+```{r FastQTL}
+egenes <- read_tsv("~/BTSync/FetalRNAseq/Github/GENEX-FB2/FastQTL/egenes.bed.gz",
+                   col_names=c("chr", "start", "end", "gene_id", "num_var", "beta_shape1", "beta_shape2", "true_df", "pval_true_df", "variant_id", "tss_distance", "minor_allele_samples", "minor_allele_count", "maf", "ref_factor", "pval_nominal", "slope", "slope_se", "pval_perm", "pval_beta", "qval", "pval_nominal_threshold"))
+
+
+filter(egenes, qval<.1) %>% tally()
+filter(egenes, qval<.1) %>% tally()/nrow(egenes)
+filter(egenes, qval<.1) %>% 
+  count(chr) %>% 
+  rename(eGenes=n) %>% 
+  full_join(count(egenes, chr)) %>%
+  rename(allGenes=n) %>%
+  mutate(proportion=eGenes/allGenes) %>% 
+  arrange(desc(proportion))
+
+egenes %>% group_by(chr) %>% summarise(threshold= mean(pval_nominal_threshold)) %>% arrange(threshold)
+```
+
+
+## SMR
 - 7 loci have significnat SMR p-values when correcting for the number of loci in the output and p_HEIDI>.05
     - only 806 genes are tested because the p-value cutoff for eQTLs is 5e-8
     - 3 survive when correcting for 29720 tested genes (p<1.68e-06)
@@ -66,34 +99,60 @@ PlotEQTL(geneID, snp, pos, chr, counts, target, snp_header)
 - 9 additional loci have significant SMR p-values but significant heterogeneity (p_HEIDI<.05)
     - all of these are on Chr6
 
-```{r}
+```{r smr_summary_gene, cache=TRUE}
 mysmr <- read_delim("~/BTSync/FetalRNAseq/Github/GENEX-FB2/SMR/mysmr.smr",
-"\t", escape_double = FALSE, trim_ws = TRUE) 
+"\t", escape_double = FALSE, trim_ws = TRUE)
 
-smr <- mysmr %>% select(-probeID, -ProbeChr, -Probe_bp, -A1, -A2, -Freq, -b_GWAS, -se_GWAS, -b_eQTL, -se_eQTL, -b_SMR, -se_SMR, -nsnp_HEIDI)
+smr_filter <- select(counts, Id, SYMBOL) %>% right_join(mysmr, by=c('Id' = 'Gene')) %>%
+  filter(p_SMR<.05/806 & p_HEIDI>.05) %>% 
+  arrange(p_SMR)
+smr_filter %>% select(-probeID, -ProbeChr, -Probe_bp, -A1, -A2, -Freq, -b_GWAS, -se_GWAS, -b_eQTL, -se_eQTL, -b_SMR, -se_SMR, -nsnp_HEIDI, -topSNP_bp)
+#%>% left_join(select(hglft_genome_26c7_734240, GeneID, Trait, eQTL_study), by=c('Gene' = 'GeneID')) %>% View()
 
-filter(smr, p_SMR<.05/806 & p_HEIDI>.05) %>% arrange(p_SMR) %>% left_join(select(hglft_genome_26c7_734240, GeneID, Trait, eQTL_study), by=c('Gene' = 'GeneID')) %>% View()
 
-
-filter(hglft_genome_26c7_734240, Trait=='Schizophrenia') %>% group_by(eQTL_study) %>% summarise(n=n()) %>% View()
+#filter(hglft_genome_26c7_734240, Trait=='Schizophrenia') %>% #group_by(eQTL_study) %>% summarise(n=n()) %>% View()
 ```
 
-# HIST1H4L (histone cluster 1 H4 family member l)
+```{r dependson='smr_summary_gene'}
+Hauberg <- read_tsv("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/Hauberg.txt")
+hauberg_counts <- smr_filter %>% left_join(select(Hauberg, GeneID, Trait, eQTL_study), by=c('Id' = 'GeneID')) %>% filter(!is.na(Trait)) %>% count(SYMBOL) %>% rename(total=n)
+
+scz_counts <- filter(Hauberg, Trait=='Schizophrenia') %>%
+  select(GeneID, eQTL_study) %>%
+  right_join(smr_filter, by=c('GeneID' = 'Id')) %>% 
+  mutate(eQTL_study = ifelse(str_detect(eQTL_study, 'Brain'), paste('Scz x', eQTL_study), 'Scz x Other')) %>%
+  count(GeneID, eQTL_study) %>% spread(eQTL_study, n) %>%
+  select(-`<NA>`)
+
+
+smr_filter %>% left_join(select(Hauberg, GeneID, Trait, eQTL_study), by=c('Id' = 'GeneID')) %>%
+  count(SYMBOL, Trait, Id) %>% 
+  spread(Trait, n) %>% 
+  mutate(Other= `BMI, hip adjusted` + `Menopause, age at` +Height) %>%
+  select(-`BMI, hip adjusted`, -`Menopause, age at`, -Height, -`<NA>`) %>%
+  left_join(scz_counts, by=c('Id' = 'GeneID')) %>%
+  select(SYMBOL, starts_with('Scz'), everything(), -Schizophrenia, -Id)
+```
+
+### HIST1H4L (histone cluster 1 H4 family member l)
 - CLOZUK locus 1 (xMHC)
-```{r}
+```{r HIST1H4L, cache=TRUE}
 #smr --bfile ../Genotypes/Plink/genotypes --gwas-summary CLOZUK_recoded.txt --beqtl-summary mybesd --out HIST1H4L  --plot --probe ENSG00000275126 --probe-wind 500 --gene-list ../Data/geneloc_smr.txt
 SMRData = ReadSMRData("../SMR/HIST1H4L.ENSG00000275126.txt")
+
+SMRData[["SMR"]][["V4"]] <- counts[sapply(SMRData[["SMR"]][["V4"]], function(x) which(counts$Id ==x)),]$SYMBOL
+
 SMRLocusPlot(data=SMRData, smr_thresh=.05/806, heidi_thresh=0.05, plotWindow=500, max_anno_probe=16)
 SMRLocusPlot(data=SMRData, smr_thresh=.05/806, heidi_thresh=0.05, plotWindow=10, max_anno_probe=16)
-SMREffectPlot(data=SMRData, trait_name="sczx")
+SMREffectPlot(data=SMRData, trait_name="CLOZUK")
 PlotEQTL('ENSG00000275126', 'rs200995', 27845916, 6, counts, target, snp_header)
 
 ```
 
-# AC243562.2 (processed pseudogene) / CSPG4P11 (Chondroitin Sulfate Proteoglycan 4 Pseudogene 11) / UBE2Q2L (ubiquitin conjugating enzyme E2 Q2 like)
-- CLOZUK # 76 
+## AC243562.2 (processed pseudogene) / CSPG4P11 (Chondroitin Sulfate Proteoglycan 4 Pseudogene 11) / UBE2Q2L (ubiquitin conjugating enzyme E2 Q2 like)
+- CLOZUK 76 
 
-```{r}
+```{r UBE2Q2L, cache=TRUE}
 #smr --bfile ../Genotypes/Plink/genotypes --gwas-summary CLOZUK_recoded.txt --beqtl-summary mybesd --out AC243562  --plot --probe ENSG00000259683 --probe-wind 500 --gene-list ../Data/geneloc_smr.txt
 SMRData = ReadSMRData("../SMR/AC243562.ENSG00000259683.txt")
 SMRLocusPlot(data=SMRData, smr_thresh=.05/806, heidi_thresh=0.05, plotWindow=500, max_anno_probe=16)
@@ -105,9 +164,9 @@ PlotEQTL('ENSG00000259511', 'rs62028142', 84386630, 15, counts, target, snp_head
 ```
 
 
-# LINC01068
-- CLOZUK # 105 (NDFIP2, NDFIP2-AS1, RBM26, RBM26-AS1)
-```{r}
+## LINC01068
+- CLOZUK 105 (NDFIP2, NDFIP2-AS1, RBM26, RBM26-AS1)
+```{r LINC01068, cache=TRUE}
 #smr --bfile ../Genotypes/Plink/genotypes --gwas-summary CLOZUK_recoded.txt --beqtl-summary mybesd --out LINC01068  --plot --probe ENSG00000227676 --probe-wind 500 --gene-list ../Data/geneloc_smr.txt
 SMRData = ReadSMRData("../SMR/LINC01068.ENSG00000227676.txt")
 SMRLocusPlot(data=SMRData, smr_thresh=.05/806, heidi_thresh=0.05, plotWindow=500, max_anno_probe=16)
@@ -116,9 +175,9 @@ SMREffectPlot(data=SMRData, trait_name="sczx")
 PlotEQTL('ENSG00000227676', 'rs1212082', 79552633, 13, counts, target, snp_header)
 ```
 
-# ABCB9 (ATP binding cassette subfamily B member 9)
-- CLOZUK #11
-```{r}
+## ABCB9 (ATP binding cassette subfamily B member 9)
+- CLOZUK 11
+```{r ABCB9, cache=TRUE}
 #smr --bfile ../Genotypes/Plink/genotypes --gwas-summary CLOZUK_recoded.txt --beqtl-summary mybesd --out ABCB9  --plot --probe ENSG00000150967 --probe-wind 500 --gene-list ../Data/geneloc_smr.txt
 SMRData = ReadSMRData("../SMR/ABCB9.ENSG00000150967.txt")
 SMRLocusPlot(data=SMRData, smr_thresh=.05/806, heidi_thresh=0.05, plotWindow=500, max_anno_probe=16)
@@ -127,9 +186,9 @@ SMREffectPlot(data=SMRData, trait_name="sczx")
 PlotEQTL('ENSG00000150967', 'rs1790106', 123107049, 12, counts, target, snp_header)
 ```
 
-# WBP2NL (WBP2 N-terminal like)
-- CLOZUK #14
-```{r}
+## WBP2NL (WBP2 N-terminal like)
+- CLOZUK 14
+```{r WBP2NL, cache=TRUE}
 #smr --bfile ../Genotypes/Plink/genotypes --gwas-summary CLOZUK_recoded.txt --beqtl-summary mybesd --out WBP2NL  --plot --probe ENSG00000183066 --probe-wind 500 --gene-list ../Data/geneloc_smr.txt
 SMRData = ReadSMRData("../SMR/WBP2NL.ENSG00000183066.txt")
 SMRLocusPlot(data=SMRData, smr_thresh=.05/806, heidi_thresh=0.05, plotWindow=500, max_anno_probe=16)
@@ -137,3 +196,6 @@ SMRLocusPlot(data=SMRData, smr_thresh=.05/806, heidi_thresh=0.05, plotWindow=100
 SMREffectPlot(data=SMRData, trait_name="sczx")
 PlotEQTL('ENSG00000183066', 'rs5996092', 41948404, 22, counts, target, snp_header)
 ```
+
+
+
