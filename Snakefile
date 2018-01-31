@@ -554,7 +554,7 @@ rule fast_qtl_permutations:
 #columns: gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta
 rule cat_permutations:
     input:
-        expand("FastQTL/permutations.{level}.{chunk}.txt.gz", level=['gene', 'transcript'], chunk=range(1,num_permutations))
+        lambda wildcards: expand("FastQTL/permutations.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
     output:
         "FastQTL/permutations_{level}.all.txt.gz"
     shell:
