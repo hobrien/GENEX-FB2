@@ -427,7 +427,7 @@ rule fast_qtl:
         genotype_index = rules.tabix_vcf.output,
         covariates = rules.format_cov.output
     output:
-        "FastQTL/fastQTL.{level}.{chunk}.txt.gz"
+        temp("FastQTL/fastQTL.{level}.{chunk}.txt.gz")
     params:
         min = 1000,
         max = 10000,
@@ -455,7 +455,7 @@ rule prepare_smr:
         rules.snp_positions.output,
         "Data/{level}loc.txt"
     output:
-        "SMR/myquery.{level}.{chunk}.txt.gz"
+        temp("SMR/myquery.{level}.{chunk}.txt.gz")
     shell:
         "Rscript R/PrepareSMR.R {input} {output}"
 
@@ -463,7 +463,7 @@ rule dedup_fast_qtl:
     input:
         lambda wildcards: expand("SMR/myquery.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
     output:
-        "SMR/myquery_{level}_chr{chr_num}.txt"
+        temp("SMR/myquery_{level}_chr{chr_num}.txt")
     params:
         chr = "{chr_num}"
     run:
@@ -493,7 +493,7 @@ rule make_besd:
     input:
         rules.dedup_fast_qtl.output
     output:
-        "SMR/mybesd_{level}_chr{chr_num}.besd"
+        temp("SMR/mybesd_{level}_chr{chr_num}.besd")
     params:
         "SMR/mybesd_{level}_chr{chr_num}"
     shell:
@@ -512,7 +512,7 @@ rule smr:
         gwas = rules.prepare_gwas.output,
         besd = rules.make_besd.output
     output:
-        "SMR/mysmr_{level}_chr{chr_num}.smr"
+        temp("SMR/mysmr_{level}_chr{chr_num}.smr")
     params:
         plink_prefix = "Genotypes/Plink/genotypes",
         besd_prefix = "SMR/mybesd_{level}_chr{chr_num}",
@@ -538,7 +538,7 @@ rule fast_qtl_permutations:
         genotype_index = rules.tabix_vcf.output,
         covariates = rules.format_cov.output
     output:
-        "FastQTL/permutations.{level}.{chunk}.txt.gz"
+        temp("FastQTL/permutations.{level}.{chunk}.txt.gz")
     params:
         min = 1000,
         max = 10000,
@@ -556,7 +556,7 @@ rule cat_permutations:
     input:
         lambda wildcards: expand("FastQTL/permutations.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
     output:
-        "FastQTL/permutations_{level}.all.txt.gz"
+        temp("FastQTL/permutations_{level}.all.txt.gz")
     shell:
         "zcat {input} | gzip -c > {output}"
 
