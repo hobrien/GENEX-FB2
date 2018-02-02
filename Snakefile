@@ -1,8 +1,9 @@
+import yaml
 #snakemake --use-conda --cluster-config cluster_config.yaml --cluster "qsub -pe smp {cluster.num_cores} -l h_vmem={cluster.maxvmem}" -j 20
 
 configfile: "config.yaml"
 
-
+SMR=yaml.load(open('smr.yaml', 'r'))
 # to make DAG: snakemake -np --dag | dot -Tsvg > dag.svg
 dag = 0
 if dag:
@@ -70,7 +71,9 @@ rule all:
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
        "Results/GTExOverlaps.txt",
-       expand("SMR/mysmr_{level}_all.smr.gz", level = ['gene', 'transcript'])
+       expand("SMR/mysmr_{level}_all.smr.gz", level = ['gene', 'transcript']),
+       expand("plot/{level}.{gene_id}.txt", level=['gene'], gene_id=SMR['gene']),
+       expand("plot/{level}.{gene_id}.txt", level=['transcript'], gene_id=SMR['transcript'])
        
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -247,16 +250,26 @@ rule get_gene_positions:
     input:
         gtf=config["reference"]["gtf"]
     output:
-        "Data/{level}loc.txt"
+        "Data/geneloc.txt"
     params:
-        level = "{level}"
+        level = "genloc"
     shell:
-        "cat {input} | awk '{{if ($3 == \"{params.level}\") print $10, $1, $4, $5, $7}}' | sed 's/[\";]//g' > {output}"
+        "cat {input} | awk -v OFS=\"\t\" '{{if ($3 == \"{params.level}\") print $10, $1, $4, $5, $7}}' | sed 's/[\";]//g' > {output}"
+
+rule get_transcript_positions:
+    input:
+        gtf=config["reference"]["gtf"]
+    output:
+        "Data/transcriptloc.txt"
+    params:
+        level = "transcript"
+    shell:
+        "cat {input} | awk -v OFS=\"\t\" '{{if ($3 == \"{params.level}\") print $12, $1, $4, $5, $7}}' | sed 's/[\";]//g' > {output}"
 
 rule filter_counts:
     input:
         gene_counts = lambda wildcards: config["count_data"][wildcards.level],
-        geneloc=rules.get_gene_positions.output
+        geneloc="Data/{level}loc.txt"
     output:
         "Data/expression_{level}.bed"
     params:
@@ -493,7 +506,7 @@ rule make_besd:
     input:
         rules.dedup_fast_qtl.output
     output:
-        temp("SMR/mybesd_{level}_chr{chr_num}.besd")
+        "SMR/mybesd_{level}_chr{chr_num}.besd"
     params:
         "SMR/mybesd_{level}_chr{chr_num}"
     shell:
@@ -529,6 +542,32 @@ rule cat_smr:
         "SMR/mysmr_{level}_all.smr.gz"
     shell:
         "tail -n+2 {input} | grep -v '==>' | gzip -c > {output}"
+
+rule genloc_smr:
+    input:
+        "Data/{level}loc.txt"
+    output:
+        "Data/{level}loc_smr.txt"
+    shell:
+        "awk -v OFS=\"\t\" '{{sub(/\.[0-9]*/, \"\", $1); sub(/chr/, \"\", $2); print $2, $3, $4, $1, $5}}' {input} > {output}"
+
+rule plot_smr:
+    input:
+        gwas = rules.prepare_gwas.output,
+        genloc = rules.genloc_smr.output,
+        besd = lambda wildcards: expand("SMR/mybesd_{level}_chr{chr_num}.besd", level=wildcards.level, chr_num=SMR[wildcards.level][wildcards.gene_id])
+    output:
+        "plot/{level}.{gene_id}.txt"
+    params:
+        plink_prefix = "Genotypes/Plink/genotypes",
+        besd_prefix = lambda wildcards: expand("SMR/mybesd_{level}_chr{chr_num}", level=wildcards.level, chr_num=SMR[wildcards.level][wildcards.gene_id]),
+        out_prefix = "{level}",
+        genloc = "Data/{level}loc_smr.txt",
+        gene_id = "{gene_id}"
+    shell:
+        "smr --bfile {params.plink_prefix} --gwas-summary {input.gwas} "
+        "--beqtl-summary {params.besd_prefix} --out {params.out_prefix} --plot "
+        "--probe {params.gene_id} --probe-wind 500 --gene-list {params.genloc}"
 
 rule fast_qtl_permutations:
     input:
