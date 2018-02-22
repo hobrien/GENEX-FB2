@@ -10,7 +10,8 @@ p <- add_argument(p, "fastqtlOutput", help="")
 p <- add_argument(p, "snpfile", help="")
 p <- add_argument(p, "fdr", type="numeric", help="")
 p <- add_argument(p, "outfile", help="")
-p <- add_argument(p, "--lambda", type="numeric", help="", default=NULL)
+p <- add_argument(p, "filtered", help="")
+p <- add_argument(p, "lambda", type="numeric", help="", default=NULL)
 args <- parse_args(p)
 
 cat("Processing FastQTL output (", args$fastqtlOutput, "), with FDR=", args$fdr, "\n", sep="")
@@ -57,4 +58,5 @@ snp_pos <- mutate(snp_pos, chr=paste0('chr', X1), start = X2-1) %>%
 D <- left_join(D, snp_pos) %>%
   select(chr, start, end, everything())
 
-write.table(D, gzfile(args$outfile), quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+#write.table(D, gzfile(args$outfile), quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+write.table(filter(D, qval<=.05), gzfile(args$filtered), quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
