@@ -503,6 +503,9 @@ rule cat_permutations:
         "zcat {input} | gzip -c > {output}"
 
 # columns: chr, start, end, gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta, qval, pval_nominal_threshold
+# the tss_distance doesn't appear to take strand into account, ie; it is correct for + genes, but the distance from the transcription termination site for - genes
+# this means I will have to recalculate these values or correct them before plotting
+
 rule q_values:
     input:
         eqtls=rules.cat_permutations.output,
@@ -517,6 +520,8 @@ rule q_values:
     shell:
         "(Rscript R/calulateNominalPvalueThresholds.R {input.eqtls} {input.snp_pos} {params.fdr} {output.all_genes} {output.filtered_genes} ) > {log}"
 
+
+# filter out eQTLs from eGenes that are non-significant (also removes duplicate lines)
 rule dedup_fast_qtl:
     input:
         eqtls = lambda wildcards: expand("SMR/myquery.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
@@ -556,6 +561,45 @@ rule dedup_fast_qtl:
                     smr_file.write(line)
                     new[rsID].add(geneID)
                 unique = new
+
+# filter out all eQTLs with p-values above the FDR threshold for that egene
+# this could also use the output from dedup_fast_qtl, but that would require parsing  
+# egenes and snp_pos 22 times, so it's unclear if that would be a savings
+# I'm going to keep all fields here so I will need to select columns to create the LDSR input
+rule filter_eqtls:
+    input:
+         egenes = egenes = "FastQTL/egenes_{level}_q05.bed.gz",
+         eqtls = rules.cat_fast_qtl.output
+    output:
+        "FastQTL/sig_{level}_eqtls.bed.gz"
+    params:
+         snp_pos = rules.snp_positions.output
+    run:
+        import gzip
+        # store p_val_nominal_threshold for all egenes
+        with gzip.open(input['egenes'], 'rt') as egene_file:
+            egenes = {}
+            for line in egene_file.readlines():
+                line = line.strip()
+                fields = line.split('\t')
+                egenes[fields[3]] = float(fields[21])
+
+        # store snp positions
+        with open(params['snp_pos'], 'r') as snp_pos_file:
+            snp_positions = {}
+            for line in snp_pos_file.readlines():
+                line = line.strip()
+                fields = line.split('\t')
+                snp_positions[fields[2]] = ('chr' + fields[0], str(int(fields[1])-1), fields[1])
+
+        # print all SNPs for egenes with p_val below threshold 
+        with gzip.open(output[0], 'wt') as out_file:
+            with gzip.open(input['eqtls'], 'rt') as eqtl_file:
+                for line in eqtl_file.readlines():
+                    fields = line.split('\t')
+                    if fields[0] in egenes and float(fields[6]) <= egenes[fields[0]]:
+                        out_file.write(line)
+
 
 rule make_besd:
     input:

@@ -22,6 +22,7 @@ R/*.html
 R/*.pdf
 R/*.knit.md
 R/*.utf8.md
+R/*_cache/*
 
 # R lib files
 R/libs/*
@@ -32,6 +33,9 @@ R/libs/*
 
 # ipython notebook checkpoints
 Python/.ipynb_checkpoints/*
+
+# Byte-compiled python
+*.pyc
 
 # Images
 *.png
@@ -47,11 +51,14 @@ Genotyping/*
 Figures/*
 Peer/*
 FastQTL/*
+SMR/*
+GTCheck/*
 
 # Input data
 Data/*
 Genotypes/*
 GTEx_Analysis_v7_eQTL
+CLOZUK/*
 
 # Count data
 Counts/*
