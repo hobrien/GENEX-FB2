@@ -15,6 +15,31 @@ else:
    num_permutations = 101
 
 """
+
+After running FastQTL, I need to:
+- use permutations to determine nominal_pvalue thresholds for each gene (qvalues)
+- concatenate by chromosome and remove duplicate lines (dedup_fast_qtl)
+- make file of all eQTLs with nominal p-values below the threshold (filter_eqtls)
+    - cat different chromosomes (cat_fastqtl)
+    - make list of sig eQTL rsIDs for matrix eqtl (see below)
+    - convert file to bed file for LDSR (see LDSR Snakefile)
+- make a file all eQTLs for significant eGenes (currently part of dedup_fast_qtl)
+    - covert to format needed for SMR make_besd (prepare_smr)
+    
+- potential optimisations:
+    - qvalues produces a list of nominal_pvalue thresholds for only sig egenes
+    - any eQTL that is not for one of these eGenes is not going to show up in any of the downstream files
+    - the sig eQTL file is a subset of the file of all eQTLs for sig egenes
+    
+- therefore:
+    - use list of sig eGenes to as filter during dedup_fast_qtl
+    - use output of dedup_fast_qtl as input to filter_etql
+    
+
+zcat sig_eqtls.bed.gz | cut -f 4 > ../../Genotypes/Plink/sig_snps_gene.txt
+plink -bfile genotypes -extract sig_snps_gene.txt --recode A-transpose --out sig_snps_gene
+plink -bfile genotypes -extract sig_snps_gene.txt --recode --out sig_snps_gene
+
 rules:
     rename_samples: replace genotyping well IDs with BrianBank IDs in imputed vcf files
     index_vcf: use bcftools to index vcf with renamed samples
@@ -462,16 +487,6 @@ rule cat_fast_qtl:
     shell:
         "zcat {input} | gzip -c > {output}"
 
-rule prepare_smr:
-    input:
-        rules.fast_qtl.output,
-        rules.snp_positions.output,
-        "Data/{level}loc.txt"
-    output:
-        temp("SMR/myquery.{level}.{chunk}.txt.gz")
-    shell:
-        "Rscript R/PrepareSMR.R {input} {output}"
-
 rule fast_qtl_permutations:
     input:
         counts = rules.bgzip_counts.output,
@@ -524,10 +539,10 @@ rule q_values:
 # filter out eQTLs from eGenes that are non-significant (also removes duplicate lines)
 rule dedup_fast_qtl:
     input:
-        eqtls = lambda wildcards: expand("SMR/myquery.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
+        eqtls = lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
         egenes = "FastQTL/egenes_{level}_q05.bed.gz"
     output:
-        "SMR/myquery_{level}_chr{chr_num}.txt"
+        "FastQTL/all_eqtls_{level}_chr{chr_num}.txt.gz"
     params:
         chr = "{chr_num}"
     run:
@@ -541,10 +556,8 @@ rule dedup_fast_qtl:
                 fields = line.split('\t')
                 egenes.add(fields[3])
                 
-        with open(output[0], 'w') as smr_file:
-            headers = ['SNP', 'Chr', 'BP', 'A1', 'A2', 'Freq', 'Probe', 'Probe_Chr', 'Probe_bp', 'Gene', 'Orientation', 'b', 'se', 'p']
-            smr_file.write('\t'.join(headers) + '\n')
-            unique = defaultdict(set)
+        with gzip.open(output[0], 'wt') as all_eqtls:
+            unique = defaultdict(set)  # unique gets replaced after each file because duplicates appear to be only between adjacent files and dicts get quite large
             for input_file in input['eqtls']:
               with gzip.open(input_file, 'rt') as f:
                 new = defaultdict(set)
@@ -552,13 +565,13 @@ rule dedup_fast_qtl:
                     fields = line.split('\t')
                     if fields[1] != params['chr']:
                         continue
-                    rsID = fields[0]
                     geneID = fields[6]
                     if not geneID in egenes:
                         continue 
+                    rsID = fields[0]
                     if rsID in unique and geneID in unique[rsID]:
                         continue
-                    smr_file.write(line)
+                    all_eqtls.write(line)
                     new[rsID].add(geneID)
                 unique = new
 
@@ -569,11 +582,9 @@ rule dedup_fast_qtl:
 rule filter_eqtls:
     input:
          egenes = egenes = "FastQTL/egenes_{level}_q05.bed.gz",
-         eqtls = rules.cat_fast_qtl.output
+         eqtls = "FastQTL/all_eqtls_{level}_chr{chr_num}.txt.gz"
     output:
-        "FastQTL/sig_{level}_eqtls.bed.gz"
-    params:
-         snp_pos = rules.snp_positions.output
+        "FastQTL/sig_eqtls_{level}_chr{chr_num}.gz"
     run:
         import gzip
         # store p_val_nominal_threshold for all egenes
@@ -584,14 +595,6 @@ rule filter_eqtls:
                 fields = line.split('\t')
                 egenes[fields[3]] = float(fields[21])
 
-        # store snp positions
-        with open(params['snp_pos'], 'r') as snp_pos_file:
-            snp_positions = {}
-            for line in snp_pos_file.readlines():
-                line = line.strip()
-                fields = line.split('\t')
-                snp_positions[fields[2]] = ('chr' + fields[0], str(int(fields[1])-1), fields[1])
-
         # print all SNPs for egenes with p_val below threshold 
         with gzip.open(output[0], 'wt') as out_file:
             with gzip.open(input['eqtls'], 'rt') as eqtl_file:
@@ -599,74 +602,6 @@ rule filter_eqtls:
                     fields = line.split('\t')
                     if fields[0] in egenes and float(fields[6]) <= egenes[fields[0]]:
                         out_file.write(line)
-
-
-rule make_besd:
-    input:
-        rules.dedup_fast_qtl.output
-    output:
-        "SMR/mybesd_{level}_chr{chr_num}.besd"
-    params:
-        "SMR/mybesd_{level}_chr{chr_num}"
-    shell:
-        "smr --qfile {input} --make-besd --out {params}"
-
-rule prepare_gwas:
-    input:
-        config['gwas']
-    output:
-        "SMR/CLOZUK_recoded.txt"
-    shell:
-        "Rscript R/PrepareGWAS.R {input} {output}"
-
-rule smr:
-    input:
-        gwas = rules.prepare_gwas.output,
-        besd = rules.make_besd.output
-    output:
-        temp("SMR/mysmr_{level}_chr{chr_num}.smr")
-    params:
-        plink_prefix = "Genotypes/Plink/genotypes",
-        besd_prefix = "SMR/mybesd_{level}_chr{chr_num}",
-        out_prefix = "SMR/mysmr_{level}_chr{chr_num}"
-    threads: 10    
-    shell:
-        "smr --bfile {params.plink_prefix} --gwas-summary {input.gwas} "
-        "--beqtl-summary {params.besd_prefix} --out {params.out_prefix} --thread-num {threads}" 
-
-rule cat_smr:
-    input:
-        lambda wildcards: expand("SMR/mysmr_{level}_chr{chr_num}.smr", level = wildcards.level, chr_num=range(1,chr_num))
-    output:
-        "SMR/mysmr_{level}_all.smr.gz"
-    shell:
-        "tail -n+2 {input} | grep -v '==>' | gzip -c > {output}"
-
-rule genloc_smr:
-    input:
-        "Data/{level}loc.txt"
-    output:
-        "Data/{level}loc_smr.txt"
-    shell:
-        "awk -v OFS=\"\t\" '{{sub(/\.[0-9]*/, \"\", $1); sub(/chr/, \"\", $2); print $2, $3, $4, $1, $5}}' {input} > {output}"
-
-rule plot_smr:
-    input:
-        gwas = rules.prepare_gwas.output,
-        genloc = rules.genloc_smr.output,
-        besd = lambda wildcards: expand("SMR/mybesd_{level}_chr{chr_num}.besd", level=wildcards.level, chr_num=SMR[wildcards.level][wildcards.gene_id])
-    output:
-        "plot/{level}.{gene_id}.txt"
-    params:
-        plink_prefix = "Genotypes/Plink/genotypes",
-        besd_prefix = lambda wildcards: expand("SMR/mybesd_{level}_chr{chr_num}", level=wildcards.level, chr_num=SMR[wildcards.level][wildcards.gene_id]),
-        out_prefix = "{level}",
-        genloc = "Data/{level}loc_smr.txt",
-        gene_id = "{gene_id}"
-    shell:
-        "smr --bfile {params.plink_prefix} --gwas-summary {input.gwas} "
-        "--beqtl-summary {params.besd_prefix} --out {params.out_prefix} --plot "
-        "--probe {params.gene_id} --probe-wind 500 --gene-list {params.genloc}"
 
 """CrossMap is picky about the formatting of bed files, so I've had to discard some information
 I was able to put the geneId in the score column and the nominal_p, slope, slope_se and q
