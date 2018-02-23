@@ -75,12 +75,7 @@ rules:
     tabix_vcf: index final vcf file
     fast_qtl: run fast_qtl on each chunk of genome (calculate nominal p-values for all SNPs)
     cat_fast_qtl: concatinate fast_qtl nominal pass output
-    rule prepare_smr:
     rule dedup_fast_qtl:
-    rule make_besd:
-    rule prepare_gwas:
-    rule smr:
-    rule cat_smr:
     fast_qtl_permutations: run permutation analysis on each chunk of genome (corrected p-values for top SNPs)
     cat_permutations: concatinate fast_qtl permutation pass output
     q_values: calculate FDR for each eQTL
@@ -96,9 +91,7 @@ rule all:
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
        "Results/GTExOverlaps.txt",
-       expand("SMR/mysmr_{level}_all.smr.gz", level = ['gene', 'transcript']),
-       expand("plot/{level}.{gene_id}.txt", level=['gene'], gene_id=SMR['gene']),
-       expand("plot/{level}.{gene_id}.txt", level=['transcript'], gene_id=SMR['transcript'])
+       expand("FastQTL/sig_eqtls_{level}.{chunk}.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations))
        
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -542,7 +535,7 @@ rule dedup_fast_qtl:
         eqtls = lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
         egenes = "FastQTL/egenes_{level}_q05.bed.gz"
     output:
-        "FastQTL/all_eqtls_{level}_chr{chr_num}.txt.gz"
+        lambda wildcards: expand("FastQTL/all_eqtls_{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
     params:
         chr = "{chr_num}"
     run:
@@ -556,10 +549,10 @@ rule dedup_fast_qtl:
                 fields = line.split('\t')
                 egenes.add(fields[3])
                 
-        with gzip.open(output[0], 'wt') as all_eqtls:
-            unique = defaultdict(set)  # unique gets replaced after each file because duplicates appear to be only between adjacent files and dicts get quite large
-            for input_file in input['eqtls']:
-              with gzip.open(input_file, 'rt') as f:
+        unique = defaultdict(set)  # unique gets replaced after each file because duplicates appear to be only between adjacent files and dicts get quite large
+        for i in range(len(output)):
+            with gzip.open(output[i], 'wt') as all_eqtls:
+              with gzip.open(input['eqtls'][i], 'rt') as f:
                 new = defaultdict(set)
                 for line in f.readlines():
                     fields = line.split('\t')
@@ -582,9 +575,9 @@ rule dedup_fast_qtl:
 rule filter_eqtls:
     input:
          egenes = egenes = "FastQTL/egenes_{level}_q05.bed.gz",
-         eqtls = "FastQTL/all_eqtls_{level}_chr{chr_num}.txt.gz"
+         eqtls = "FastQTL/all_eqtls_{level}.{chunk}.txt.gz"
     output:
-        "FastQTL/sig_eqtls_{level}_chr{chr_num}.gz"
+        "FastQTL/sig_eqtls_{level}.{chunk}.gz"
     run:
         import gzip
         # store p_val_nominal_threshold for all egenes
