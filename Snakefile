@@ -440,7 +440,7 @@ rule fast_qtl:
         genotype_index = rules.tabix_vcf.output,
         covariates = rules.format_cov.output
     output:
-        temp("FastQTL/fastQTL.{level}.{chunk}.txt.gz")
+        "FastQTL/fastQTL.{level}.{chunk}.txt.gz"
     params:
         min = 1000,
         max = 10000,
@@ -472,21 +472,75 @@ rule prepare_smr:
     shell:
         "Rscript R/PrepareSMR.R {input} {output}"
 
+rule fast_qtl_permutations:
+    input:
+        counts = rules.bgzip_counts.output,
+        count_index = rules.index_counts.output,
+        genotypes = rules.filter_tags.output,
+        genotype_index = rules.tabix_vcf.output,
+        covariates = rules.format_cov.output
+    output:
+        temp("FastQTL/permutations.{level}.{chunk}.txt.gz")
+    params:
+        min = 1000,
+        max = 10000,
+        chunk = "{chunk}",
+        num_chunks = 100
+    log:
+        "Logs/FastQTL/fastQTL_{level}_{chunk}.txt"
+    shell:
+        "fastQTL --vcf {input.genotypes} --cov {input.covariates} --normal"
+        " --bed {input.counts} --chunk {params.chunk} {params.num_chunks}"
+        " --permute {params.min} {params.max} --out {output} -- log {log}"
+
+#columns: gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta
+rule cat_permutations:
+    input:
+        lambda wildcards: expand("FastQTL/permutations.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
+    output:
+        temp("FastQTL/permutations_{level}.all.txt.gz")
+    shell:
+        "zcat {input} | gzip -c > {output}"
+
+# columns: chr, start, end, gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta, qval, pval_nominal_threshold
+rule q_values:
+    input:
+        eqtls=rules.cat_permutations.output,
+        snp_pos=rules.snp_positions.output
+    output:
+        all_genes = "FastQTL/egenes_{level}.bed.gz",
+        filtered_genes = "FastQTL/egenes_{level}_q05.bed.gz"
+    params:
+        fdr=.05
+    log:
+        "Logs/FastQTL/q_values_{level}.txt"
+    shell:
+        "(Rscript R/calulateNominalPvalueThresholds.R {input.eqtls} {input.snp_pos} {params.fdr} {output.all_genes} {output.filtered_genes} ) > {log}"
+
 rule dedup_fast_qtl:
     input:
-        lambda wildcards: expand("SMR/myquery.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
+        eqtls = lambda wildcards: expand("SMR/myquery.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
+        egenes = "FastQTL/egenes_{level}_q05.bed.gz"
     output:
-        temp("SMR/myquery_{level}_chr{chr_num}.txt")
+        "SMR/myquery_{level}_chr{chr_num}.txt"
     params:
         chr = "{chr_num}"
     run:
         from collections import defaultdict
         import gzip
+        # make set of sig eGenes
+        with gzip.open(input['egenes'], 'rt') as egene_file:
+            egenes = set()
+            for line in egene_file.readlines():
+                line = line.strip()
+                fields = line.split('\t')
+                egenes.add(fields[3])
+                
         with open(output[0], 'w') as smr_file:
             headers = ['SNP', 'Chr', 'BP', 'A1', 'A2', 'Freq', 'Probe', 'Probe_Chr', 'Probe_bp', 'Gene', 'Orientation', 'b', 'se', 'p']
             smr_file.write('\t'.join(headers) + '\n')
             unique = defaultdict(set)
-            for input_file in input:
+            for input_file in input['eqtls']:
               with gzip.open(input_file, 'rt') as f:
                 new = defaultdict(set)
                 for line in f.readlines():
@@ -494,12 +548,13 @@ rule dedup_fast_qtl:
                     if fields[1] != params['chr']:
                         continue
                     rsID = fields[0]
-                    geneID = fields[6] 
+                    geneID = fields[6]
+                    if not geneID in egenes:
+                        continue 
                     if rsID in unique and geneID in unique[rsID]:
-                        next
-                    else:
-                        smr_file.write(line)
-                        new[rsID].add(geneID)
+                        continue
+                    smr_file.write(line)
+                    new[rsID].add(geneID)
                 unique = new
 
 rule make_besd:
@@ -568,50 +623,6 @@ rule plot_smr:
         "smr --bfile {params.plink_prefix} --gwas-summary {input.gwas} "
         "--beqtl-summary {params.besd_prefix} --out {params.out_prefix} --plot "
         "--probe {params.gene_id} --probe-wind 500 --gene-list {params.genloc}"
-
-rule fast_qtl_permutations:
-    input:
-        counts = rules.bgzip_counts.output,
-        count_index = rules.index_counts.output,
-        genotypes = rules.filter_tags.output,
-        genotype_index = rules.tabix_vcf.output,
-        covariates = rules.format_cov.output
-    output:
-        temp("FastQTL/permutations.{level}.{chunk}.txt.gz")
-    params:
-        min = 1000,
-        max = 10000,
-        chunk = "{chunk}",
-        num_chunks = 100
-    log:
-        "Logs/FastQTL/fastQTL_{level}_{chunk}.txt"
-    shell:
-        "fastQTL --vcf {input.genotypes} --cov {input.covariates} --normal"
-        " --bed {input.counts} --chunk {params.chunk} {params.num_chunks}"
-        " --permute {params.min} {params.max} --out {output} -- log {log}"
-
-#columns: gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta
-rule cat_permutations:
-    input:
-        lambda wildcards: expand("FastQTL/permutations.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
-    output:
-        temp("FastQTL/permutations_{level}.all.txt.gz")
-    shell:
-        "zcat {input} | gzip -c > {output}"
-
-# columns: chr, start, end, gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta, qval, pval_nominal_threshold
-rule q_values:
-    input:
-        eqtls=rules.cat_permutations.output,
-        snp_pos=rules.snp_positions.output
-    output:
-        "FastQTL/egenes_{level}.bed.gz"
-    params:
-        fdr=.05
-    log:
-        "Logs/FastQTL/q_values_{level}.txt"
-    shell:
-        "(Rscript R/calulateNominalPvalueThresholds.R {input.eqtls} {input.snp_pos} {params.fdr} {output}) > {log}"
 
 """CrossMap is picky about the formatting of bed files, so I've had to discard some information
 I was able to put the geneId in the score column and the nominal_p, slope, slope_se and q
