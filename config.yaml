@@ -15,6 +15,13 @@ sample_info: Data/SampleInfo.txt
 seqfile: Data/sequences.txt
 genotyping_info: Data/GenotypingInfo.txt
 gwas: /neurocluster/databank/CLOZUK/GWAS/SUMSTATS/CLOZUK_PGC2noclo.wCHRX.w1000Gfrq.wNtot.METAL.assoc.dosage.gz
+GWAS:
+    adhd: GWAS/demontis-walters-martin-2017-eur-adhd.smr
+    asd: GWAS/anney-ripke-antilla-2017-eur-asd.smr
+    scz: GWAS/ripke-neale-corvin-2014-scz.smr
+    bip: GWAS/stahl-breen-forstner-2017-bip.smr
+    mdd: GWAS/wray-ripke-mattheisen-2017-mdd_filt.txt
+    clozuk: GWAS/CLOZUK_recoded.txt
 gtex_samples:
     - Adipose_Subcutaneous
     - Adipose_Visceral_Omentum
