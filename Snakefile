@@ -535,9 +535,7 @@ rule dedup_fast_qtl:
         eqtls = lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
         egenes = "FastQTL/egenes_{level}_q05.bed.gz"
     output:
-        lambda wildcards: expand("FastQTL/all_eqtls_{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
-    params:
-        chr = "{chr_num}"
+        ["FastQTL/all_eqtls_{level}." + str(x+1) + ".txt.gz" for x in range(100)]
     run:
         from collections import defaultdict
         import gzip
@@ -556,12 +554,10 @@ rule dedup_fast_qtl:
                 new = defaultdict(set)
                 for line in f.readlines():
                     fields = line.split('\t')
-                    if fields[1] != params['chr']:
-                        continue
-                    geneID = fields[6]
+                    geneID = fields[0]
                     if not geneID in egenes:
                         continue 
-                    rsID = fields[0]
+                    rsID = fields[1]
                     if rsID in unique and geneID in unique[rsID]:
                         continue
                     all_eqtls.write(line)
@@ -574,7 +570,7 @@ rule dedup_fast_qtl:
 # I'm going to keep all fields here so I will need to select columns to create the LDSR input
 rule filter_eqtls:
     input:
-         egenes = egenes = "FastQTL/egenes_{level}_q05.bed.gz",
+         egenes = "FastQTL/egenes_{level}_q05.bed.gz",
          eqtls = "FastQTL/all_eqtls_{level}.{chunk}.txt.gz"
     output:
         "FastQTL/sig_eqtls_{level}.{chunk}.gz"
