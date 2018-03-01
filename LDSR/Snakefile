@@ -4,7 +4,7 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        results = expand("results/{level}_{gwas}.results", level = ['gene', 'transcript'], gwas=config['gwas']),
+        results = expand("results/both_{gwas}.results", gwas=config['gwas']),
         
 rule download_ref:
     params:
@@ -99,15 +99,17 @@ rule liftover_sig_eqtls:
 rule intersect_eqtls:
     input:
         annot = rules.annot2bed.output,
-        eqtls = rules.liftover_sig_eqtls.output
+        eqtls_gene = "eqtls/sig_eqtls_gene_hg19.bed",
+        eqtls_tr = "eqtls/sig_eqtls_transcript_hg19.bed",
     output:
-        "annotation/sig_eqtls.{level}.{chr}.annot.gz"
+        "annotation/sig_eqtls.both.{chr}.annot.gz"
     params:
-        uncompressed = "annotation/sig_eqtls.{level}.{chr}.annot"
+        uncompressed = "annotation/sig_eqtls.both.{chr}.annot"
     shell:
-        "echo -e \"CHR\tBP\tSNP\tCM\teqtls\" > {params.uncompressed}; "
-        "/share/apps/bedtools intersect -a {input.annot} -b {input.eqtls} -c | "
-        "sed 's/^chr//g' | awk -v OFS=\"\t\" '{{print $1, $2, $4, $5, $6}}' >> {params.uncompressed}; "
+        "echo -e \"CHR\tBP\tSNP\tCM\tgene\ttranscript\" > {params.uncompressed}; "
+        "/share/apps/bedtools intersect -a {input.annot} -b {input.eqtls_gene} -c | "
+        "/share/apps/bedtools intersect -a stdin -b {input.eqtls_tr} -c | "
+        "sed 's/^chr//g' | awk -v OFS=\"\t\" '{{print $1, $3, $4, $5, $6, $7}}' >> {params.uncompressed}; "
         "gzip {params.uncompressed}"
 
 rule prepare_sumstats:
@@ -127,12 +129,12 @@ rule ldsr:
         bfile_folder = "Reference/1000G_plinkfiles",
         snps_folder = "Reference/hapmap3_snps"
     output:
-        "annotation/sig_eqtls.{level}.{chr}.l2.ldscore.gz"
+        "annotation/sig_eqtls.both.{chr}.l2.ldscore.gz"
     conda:
         "env/py27.yaml"
     params:
         bfile = "Reference/1000G_plinkfiles/1000G.mac5eur.{chr}",
-        ldscores = "annotation/sig_eqtls.{level}.{chr}",
+        ldscores = "annotation/sig_eqtls.both.{chr}",
         snps = "Reference/hapmap3_snps/hm.{chr}.snp"
     log:
         "Logs/LDSC/{chr}_ldsc.txt"
@@ -143,19 +145,19 @@ rule ldsr:
 rule partition_heritability:
     input:
         sumstats = "gwas/{gwas}.sumstats.gz",
-        partition_lds = lambda wildcards: expand("annotation/sig_eqtls.{level}.{chr}.l2.ldscore.gz", level=wildcards.level, chr=range(1,23)),
+        partition_lds = lambda wildcards: expand("annotation/sig_eqtls.both.{chr}.l2.ldscore.gz", chr=range(1,23)),
         weights_folder = "Reference/weights_hm3_no_hla",
         freq_folder = "Reference/1000G_frq"
     output:
-        "results/{level}_{gwas}.results"
+        "results/both_{gwas}.results"
     conda:
         "env/py27.yaml"
     params:
         baseline = "Reference/baseline/baseline.",
-        partition = "annotation/sig_eqtls.{level}.",
+        partition = "annotation/sig_eqtls.both.",
         weights = "Reference/weights_hm3_no_hla/weights.",
         freq = "Reference/1000G_frq/1000G.mac5eur.",
-        out = "results/{level}_{gwas}"
+        out = "results/both_{gwas}"
     shell:
         "ldsc.py --h2 {input.sumstats} --ref-ld-chr {params.baseline},{params.partition} "
         "--w-ld-chr {params.weights} --overlap-annot --frqfile-chr {params.freq} "
