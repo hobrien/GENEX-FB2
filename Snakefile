@@ -1,9 +1,11 @@
-import yaml
+#import yaml
 #snakemake --use-conda --cluster-config cluster_config.yaml --cluster "qsub -pe smp {cluster.num_cores} -l h_vmem={cluster.maxvmem}" -j 20
 
 configfile: "config.yaml"
 
-SMR=yaml.load(open('smr.yaml', 'r'))
+qvals={'05': 0.05, '01': 0.01, '001': 0.001, '0001': 0.0001}
+
+#SMR=yaml.load(open('smr.yaml', 'r'))
 # to make DAG: snakemake -np --dag | dot -Tsvg > dag.svg
 dag = 0
 if dag:
@@ -86,12 +88,10 @@ rules:
 """
 rule all:
     input:
-       expand("FastQTL/egenes_{level}.bed.gz", level = ['gene', 'transcript']),
-       expand("FastQTL/FastQTL_{level}.all.txt.gz", level = ['gene', 'transcript']),
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
        "Results/GTExOverlaps.txt",
-       expand("FastQTL/sig_eqtls_{level}.{chunk}.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations))
+       expand("FastQTL/sig_eqtls_{level}.{chunk}_q{fdr}.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['05', '01', '001', '0001'])
        
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -488,7 +488,7 @@ rule fast_qtl_permutations:
         genotype_index = rules.tabix_vcf.output,
         covariates = rules.format_cov.output
     output:
-        temp("FastQTL/permutations.{level}.{chunk}.txt.gz")
+        "FastQTL/permutations.{level}.{chunk}.txt.gz"
     params:
         min = 1000,
         max = 10000,
@@ -506,7 +506,7 @@ rule cat_permutations:
     input:
         lambda wildcards: expand("FastQTL/permutations.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
     output:
-        temp("FastQTL/permutations_{level}.all.txt.gz")
+        "FastQTL/permutations_{level}.all.txt.gz"
     shell:
         "zcat {input} | gzip -c > {output}"
 
@@ -519,23 +519,22 @@ rule q_values:
         eqtls=rules.cat_permutations.output,
         snp_pos=rules.snp_positions.output
     output:
-        all_genes = "FastQTL/egenes_{level}.bed.gz",
-        filtered_genes = "FastQTL/egenes_{level}_q05.bed.gz"
+        all_genes = "FastQTL/egenes_{level}_q{fdr}.bed.gz",
+        filtered_genes = "FastQTL/sig_egenes_{level}_q{fdr}.bed.gz"
     params:
-        fdr=.05
+        fdr = lambda wildcards: qvals[wildcards.fdr]
     log:
-        "Logs/FastQTL/q_values_{level}.txt"
+        "Logs/FastQTL/q_values_{level}_q{fdr}.txt"
     shell:
         "(Rscript R/calulateNominalPvalueThresholds.R {input.eqtls} {input.snp_pos} {params.fdr} {output.all_genes} {output.filtered_genes} ) > {log}"
-
 
 # filter out eQTLs from eGenes that are non-significant (also removes duplicate lines)
 rule dedup_fast_qtl:
     input:
         eqtls = lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
-        egenes = "FastQTL/egenes_{level}_q05.bed.gz"
+        egenes = "FastQTL/sig_egenes_{level}_q{fdr}.bed.gz"
     output:
-        ["FastQTL/all_eqtls_{level}." + str(x+1) + ".txt.gz" for x in range(100)]
+        ["FastQTL/all_eqtls_{level}." + str(x+1) + "_q{fdr}.txt.gz" for x in range(100)]
     run:
         from collections import defaultdict
         import gzip
@@ -565,15 +564,13 @@ rule dedup_fast_qtl:
                 unique = new
 
 # filter out all eQTLs with p-values above the FDR threshold for that egene
-# this could also use the output from dedup_fast_qtl, but that would require parsing  
-# egenes and snp_pos 22 times, so it's unclear if that would be a savings
 # I'm going to keep all fields here so I will need to select columns to create the LDSR input
 rule filter_eqtls:
     input:
-         egenes = "FastQTL/egenes_{level}_q05.bed.gz",
-         eqtls = "FastQTL/all_eqtls_{level}.{chunk}.txt.gz"
+         egenes = "FastQTL/sig_egenes_{level}_q{fdr}.bed.gz",
+         eqtls = "FastQTL/all_eqtls_{level}.{chunk}_q{fdr}.txt.gz"
     output:
-        "FastQTL/sig_eqtls_{level}.{chunk}.gz"
+        "FastQTL/sig_eqtls_{level}.{chunk}_q{fdr}.gz"
     run:
         import gzip
         # store p_val_nominal_threshold for all egenes
