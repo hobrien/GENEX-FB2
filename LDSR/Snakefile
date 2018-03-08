@@ -4,7 +4,7 @@ configfile: "config.yaml"
 rule all:
     input:
         #results = expand("results/both_q{fdr}_{gwas}.results", fdr=['05', '01', '001', '0001'], gwas=config['gwas']),
-        results = expand("results/baseline_q{fdr}_{gwas}.results", fdr='05', gwas=['gene', 'transcript']),
+        results = expand("results/baseline_q{fdr}_{gwas}_p.txt", fdr='05', gwas=['gene', 'transcript']),
         
 rule download_ref:
     params:
@@ -157,9 +157,16 @@ rule partition_heritability:
         #partition = "annotation/sig_eqtls.both_q{fdr}.",
         weights = "Reference/weights_hm3_no_hla/weights.",
         freq = "Reference/1000G_frq/1000G.mac5eur.",
-        out = "results/both_q{fdr}_{gwas}"
+        out = "results/baseline_q{fdr}_{gwas}"
     shell:
         "ldsc.py --h2 {input.sumstats} --ref-ld-chr {params.baseline} "
         "--w-ld-chr {params.weights} --overlap-annot --frqfile-chr {params.freq} "
         "--out {params.out} --print-coefficients"
-        
+
+rule add_pvalues: # convert Z-scores to p-values
+    input:
+        rules.partition_heritability.output
+    output:
+        "results/baseline_q{fdr}_{gwas}_p.txt"
+    shell:
+        "Rscript ../R/AddPvalue.R {input} {output}"
