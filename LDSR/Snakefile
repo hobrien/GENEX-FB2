@@ -3,7 +3,8 @@ configfile: "config.yaml"
 
 rule all:
     input:
-        results = expand("results/both_q{fdr}_{gwas}.results", fdr=['05', '01', '001', '0001'], gwas=config['gwas']),
+        #results = expand("results/both_q{fdr}_{gwas}.results", fdr=['05', '01', '001', '0001'], gwas=config['gwas']),
+        results = expand("results/baseline_q{fdr}_{gwas}.results", fdr='05', gwas=['gene', 'transcript']),
         
 rule download_ref:
     params:
@@ -118,9 +119,9 @@ rule prepare_sumstats:
         "gwas/{gwas}.sumstats.gz"
     params:
         prefix = "gwas/{gwas}",
-        #n = lambda wildcards: config['sample_size'][wildcards.gwas]
+        n = 120
     shell:
-       "~/anaconda2/bin/python ~/bin/munge_sumstats.py --sumstats {input} --out {params.prefix} " #--N {params.n}"
+       "~/anaconda2/bin/python ~/bin/munge_sumstats.py --sumstats {input} --out {params.prefix} --N {params.n}"
        
 rule ldsr:
     input:
@@ -144,21 +145,21 @@ rule ldsr:
 rule partition_heritability:
     input:
         sumstats = "gwas/{gwas}.sumstats.gz",
-        partition_lds = lambda wildcards: expand("annotation/sig_eqtls.both_q{fdr}.{chr}.l2.ldscore.gz", fdr=wildcards.fdr, chr=range(1,23)),
+        #partition_lds = lambda wildcards: expand("annotation/sig_eqtls.both_q{fdr}.{chr}.l2.ldscore.gz", fdr=wildcards.fdr, chr=range(1,23)),
         weights_folder = "Reference/weights_hm3_no_hla",
         freq_folder = "Reference/1000G_frq"
     output:
-        "results/both_q{fdr}_{gwas}.results"
+        "results/baseline_q{fdr}_{gwas}.results"
     conda:
         "env/py27.yaml"
     params:
         baseline = "Reference/baseline/baseline.",
-        partition = "annotation/sig_eqtls.both_q{fdr}.",
+        #partition = "annotation/sig_eqtls.both_q{fdr}.",
         weights = "Reference/weights_hm3_no_hla/weights.",
         freq = "Reference/1000G_frq/1000G.mac5eur.",
         out = "results/both_q{fdr}_{gwas}"
     shell:
-        "ldsc.py --h2 {input.sumstats} --ref-ld-chr {params.baseline},{params.partition} "
+        "ldsc.py --h2 {input.sumstats} --ref-ld-chr {params.baseline} "
         "--w-ld-chr {params.weights} --overlap-annot --frqfile-chr {params.freq} "
         "--out {params.out} --print-coefficients"
         
