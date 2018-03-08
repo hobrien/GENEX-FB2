@@ -92,7 +92,8 @@ rule all:
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
        "Results/GTExOverlaps.txt",
-       expand("FastQTL/sig_eqtls_{level}.{chunk}_q{fdr}.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['05', '01', '001', '0001'])
+       expand("FastQTL/sig_eqtls_{level}.{chunk}_q{fdr}.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['05', '01', '001', '0001']),
+       expand("FastQTL/sig_snps_{level}_q05.gz", level=['gene', 'transcript'])
        
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -563,6 +564,23 @@ rule dedup_fast_qtl:
                     all_eqtls.write(line)
                     new[rsID].add(geneID)
                 unique = new
+
+rule cat_all_eqtls:
+    input:
+        lambda wildcards: expand("FastQTL/all_eqtls_{level}.{chunk}_q{fdr}.txt.gz", level = wildcards.level, fdr=wildcards.fdr, chunk=range(1,101))
+    output:
+        "FastQTL/all_eqtls_{level}.all_q{fdr}.gz"
+    shell:
+        "zcat {input} | gzip -c > {output}"
+
+rule distinct_snps:
+    input:
+        eqtls = rules.cat_all_eqtls.output,
+        snp_pos = "Genotypes/Combined/snp_positions.txt"
+    output:
+        "FastQTL/sig_snps_{level}_q{fdr}.gz"
+    shell:
+        "Rscript R/TopSNPs.R {input.eqtls} {input.snp_pos} {output}"
 
 # filter out all eQTLs with p-values above the FDR threshold for that egene
 # I'm going to keep all fields here so I will need to select columns to create the LDSR input
