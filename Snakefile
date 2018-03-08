@@ -6,6 +6,7 @@ configfile: "config.yaml"
 qvals={'05': 0.05, '01': 0.01, '001': 0.001, '0001': 0.0001}
 
 #SMR=yaml.load(open('smr.yaml', 'r'))
+#rmal
 # to make DAG: snakemake -np --dag | dot -Tsvg > dag.svg
 dag = 0
 if dag:
@@ -467,9 +468,9 @@ rule fast_qtl:
     log:
         "Logs/FastQTL/fastQTL_{level}_{chunk}.txt"
     shell:
-        "fastQTL --vcf {input.genotypes} "
+        "fastQTL --vcf {input.genotypes} --normal "
         "--bed {input.counts} --chunk {params.chunk} {params.num_chunks} "
-        "--cov {input.covariates} --out {output} -- log {log} --normal"
+        "--cov {input.covariates} --out {output} --log {log}"
 
 # columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
 rule cat_fast_qtl:
@@ -499,7 +500,7 @@ rule fast_qtl_permutations:
     shell:
         "fastQTL --vcf {input.genotypes} --cov {input.covariates} --normal"
         " --bed {input.counts} --chunk {params.chunk} {params.num_chunks}"
-        " --permute {params.min} {params.max} --out {output} -- log {log}"
+        " --permute {params.min} {params.max} --out {output} --log {log}"
 
 #columns: gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta
 rule cat_permutations:
