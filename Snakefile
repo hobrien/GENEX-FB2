@@ -92,8 +92,9 @@ rule all:
        "Genotypes/Plink/scz_ld.tags",
        "Results/GTExOverlaps.txt",
        expand("FastQTL/sig_eqtls_{level}.{chunk}_q{fdr}.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['05', '01', '001', '0001']),
-       expand("FastQTL/sig_snps_{level}_q05.gz", level=['gene', 'transcript'])
-       
+       expand("FastQTL/sig_snps_{level}_q05.gz", level=['gene', 'transcript']),
+       expand("FastQTL/all_snps_{level}.all.txt.gz", level = ['gene', 'transcript'])
+
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
     when the header does not include the following lines:
@@ -573,6 +574,7 @@ rule cat_all_eqtls:
     shell:
         "zcat {input} | gzip -c > {output}"
 
+# This gives the lowest p-value for each SNP among eGenes that are FDR5% significant
 rule distinct_snps:
     input:
         eqtls = rules.cat_all_eqtls.output,
@@ -581,6 +583,51 @@ rule distinct_snps:
         "FastQTL/sig_snps_{level}_q{fdr}.gz"
     shell:
         "Rscript R/TopSNPs.R {input.eqtls} {input.snp_pos} {output}"
+
+# This gives the lowest p-value for all SNPs
+# for memory/performance reasons, this is going to work on adjacent chunks of the genome
+# it's possible that this will result in some duplicated SNPs, but this is easy enough to
+# check and modify as needed
+rule dedup_snps:
+    input:
+        eqtls = lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
+    output:
+        ["FastQTL/all_snps_{level}." + str(x+1) + ".txt.gz" for x in range(100)]
+    run:
+        import gzip
+
+        unique = {}  # unique gets replaced after each file because duplicates appear to be only between adjacent files and dicts get quite large
+        for i in range(len(output)):
+            with gzip.open(input['eqtls'][i], 'rt') as f:
+                new = {}
+                for line in f.readlines():
+                    fields = line.split('\t')
+                    p = float(fields[6])
+                    rsID = fields[1]
+                    if rsID in unique:
+                        if p < float(unique[rsID][6]):
+                            unique[rsID] = fields
+                    elif rsID in new and p >= float(new[rsID][6]):
+                        continue
+                    else:
+                        new[rsID] = fields
+            if i > 0:
+              with gzip.open(output[i-1], 'wt') as deduped_snps:
+                for rsID in unique:
+                    deduped_snps.write('\t'.join(unique[rsID]))
+            unique = new
+        with gzip.open(output[-1], 'wt') as deduped_snps:
+            for rsID in unique:
+                deduped_snps.write('\t'.join(unique[rsID]))
+
+# columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
+rule cat_snps:
+    input:
+        lambda wildcards: expand("FastQTL/all_snps_{level}.{chunk}.txt.gz", level = wildcards.level, chunk=range(1,num_permutations),)
+    output:
+        "FastQTL/all_snps_{level}.all.txt.gz"
+    shell:
+        "zcat {input} | gzip -c > {output}"
 
 # filter out all eQTLs with p-values above the FDR threshold for that egene
 # I'm going to keep all fields here so I will need to select columns to create the LDSR input
