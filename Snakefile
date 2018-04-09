@@ -93,7 +93,8 @@ rule all:
        "Results/GTExOverlaps.txt",
        expand("FastQTL/sig_eqtls_{level}.{chunk}_q{fdr}.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['05', '01', '001', '0001']),
        expand("FastQTL/sig_snps_{level}_q05.gz", level=['gene', 'transcript']),
-       expand("FastQTL/all_snps_{level}.all.txt.gz", level = ['gene', 'transcript'])
+       expand("FastQTL/all_snps_{level}.all.txt.gz", level = ['gene', 'transcript']),
+       expand("MatrixEQTL/{proximity}_eqtl_{level}.txt", proximity = ['cis', 'trans'], level = ['gene', 'transcript'])
 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
@@ -512,7 +513,7 @@ rule cat_permutations:
     shell:
         "zcat {input} | gzip -c > {output}"
 
-# columns: chr, start, end, gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta, qval, pval_nominal_threshold
+# columns: chr, snp_start, snp_end, gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta, qval, pval_nominal_threshold
 # the tss_distance doesn't appear to take strand into account, ie; it is correct for + genes, but the distance from the transcription termination site for - genes
 # this means I will have to recalculate these values or correct them before plotting
 
@@ -699,3 +700,47 @@ rule summarise_overlaps:
         "Results/GTExOverlaps.txt"
     shell:
         "Rscript R/GetOverlaps.R --query {input.query} --outfile {output} {input.sig_pairs}"
+
+rule list_snps:
+    input:
+        lambda wildcards: expand("FastQTL/sig_eqtls_{level}.{chunk}_q05.gz", level=wildcards.level, chunk=range(1,num_permutations))
+    output:
+        "FastQTL/sig_snps_{level}_q05.txt"
+    shell:
+        "zcat {input} | cut -f 2 | sort |uniq > {output}"
+
+rule plink_extract:
+    input:
+        snps = rules.list_snps.output,
+        bfile = rules.plink_import.output
+    output:
+        "Genotypes/Plink/sig_snps_{level}.traw",
+        "Genotypes/Plink/sig_snps_{level}.map"
+    params:
+        bfile_prefix = "Genotypes/Plink/genotypes",
+        output_prefix = "Genotypes/Plink/sig_snps_{level}"
+    shell:
+        "plink -bfile {params.bfile_prefix} -extract {input.snps} --recode --out {params.output_prefix}; "
+        "plink -bfile {params.bfile_prefix} -extract {input.snps} --recode A-transpose --out {params.output_prefix}"
+
+rule matrix_eqtl:
+    input:
+        genotypes = "Genotypes/Plink/sig_snps_{level}.traw",
+        snp_pos = "Genotypes/Plink/sig_snps_{level}.map",
+        gene_counts = rules.bgzip_counts.output,
+        cofactors = "Peer/factors.txt",
+        gene_loc = "Data/{level}loc.txt"
+    output:
+        cis = "MatrixEQTL/cis_eqtl_{level}.txt",
+        trans = "MatrixEQTL/trans_eqtl_{level}.txt",
+    params:
+        cis_p=1e-4,
+        trans_p=1e-8,
+        image = "MatrixEQTL/results_{level}.RData",
+    log:
+        "Logs/MatrixEQTL/matrix_eqtl_{level}.txt"
+    shell:
+        "(Rscript R/MatrixEQTL.R  --genotypes {input.genotypes} --p_trans {params.trans_p} "
+        "--p_cis {params.cis_p} --counts {input.gene_counts} --snps {input.snp_pos} "
+        "--genes {input.gene_loc} --cis {output.cis} --trans {output.trans} "
+        "--image {params.image}) 2> {log}"
