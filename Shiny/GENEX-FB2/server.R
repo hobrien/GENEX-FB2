@@ -72,8 +72,7 @@ add_links <-function(fitted) {
 }
 
 filter_table <- function(fitted, p_type, p_val) {
-  fitted <- filter(fitted, !is.na(UQ(as.name(p_type))) & UQ(as.name(p_type)) <= p_val ) %>%
-    arrange(UQ(as.name(p_type)))
+  fitted <- filter(fitted, !is.na(UQ(as.name(p_type))) & UQ(as.name(p_type)) <= p_val ) 
   fitted <- mutate(fitted, nominal_p = as.numeric(format(nominal_p, digits=3)), qvalue = as.numeric(format(qvalue, digits=3))) %>%
     select(Id=geneID, SYMBOL, `Top SNP`=topSNP, Chr, `SNP Pos`=pos, `TSS Distance`=distance, 
            `pvalue`=nominal_p, padj=qvalue)
