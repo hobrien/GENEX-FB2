@@ -11,7 +11,7 @@ p <- add_argument(p, "snpfile", help="")
 p <- add_argument(p, "fdr", type="numeric", help="")
 p <- add_argument(p, "outfile", help="")
 p <- add_argument(p, "filtered", help="")
-p <- add_argument(p, "--lambda", type="numeric", help="", default=NULL)
+p <- add_argument(p, "lambda", type="numeric", help="", default=NULL)
 args <- parse_args(p)
 
 cat("Processing FastQTL output (", args$fastqtlOutput, "), with FDR=", args$fdr, "\n", sep="")
@@ -25,11 +25,6 @@ if (dim(D)[2]==17) {
 } else {
   stop("FastQTL output in unrecognized format (mismatched number of columns).")
 }
-
-# remove duplicates (
-# keep eGene with lowest nominal p-value (only applies when top_snp not tested in one dup)
-# if nominal p identical (because top SNP tested in both), keep lowest corrected p-value (because window includes more SNPs)
-D<-arrange(D, pval_nominal, desc(pval_beta)) %>% group_by(gene_id) %>% dplyr::slice(1) %>% ungroup()
 
 # remove genes w/o variants
 nanrows <- is.na(D[, 'pval_beta'])
@@ -63,5 +58,5 @@ snp_pos <- mutate(snp_pos, chr=paste0('chr', X1), start = X2-1) %>%
 D <- left_join(D, snp_pos) %>%
   select(chr, start, end, everything())
 
-write.table(D, gzfile(args$outfile), quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+#write.table(D, gzfile(args$outfile), quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
 write.table(filter(D, qval<=.05), gzfile(args$filtered), quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")

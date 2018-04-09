@@ -51,16 +51,7 @@ Genotyping/*
 Figures/*
 Peer/*
 FastQTL/*
-SMR/mybesd.*
-SMR/myquery.*
-SMR/plot/*
-LDSR/annotation/*
-LDSR/env/*
-LDSR/eqtls
-LDSR/gwas
-LDSR/Logs
-LDSR/Reference
-LDSR/results*
+SMR/*
 GTCheck/*
 
 # Input data

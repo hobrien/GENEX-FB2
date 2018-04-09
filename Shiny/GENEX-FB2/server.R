@@ -88,10 +88,12 @@ counts <- read_delim("./Data/counts.txt", "\t", escape_double = FALSE, trim_ws =
 
 colnames(counts) <- str_replace_all(colnames(counts), 'norm.', '')
 
-top_cis <- read_delim("./Data/results.bed", "\t", escape_double = FALSE, trim_ws = TRUE, 
+top_cis <- read_delim("./Data/egenes_gene_q05.bed.gz", "\t", escape_double = FALSE, trim_ws = TRUE, 
                       col_names=c("Chr", "start", "pos", "geneID", "cisVariants", "Beta1", 
-                                  "Beta2", "topSNP", "distance", "slope", "nominal_p", 
-                                  "nominal_p_threshold", "padj_direct", "padj_beta", "qvalue")) %>%
+                                  "Beta2", "true_df", "pval_true_df", "topSNP", "distance", 
+                                  " minor_allele_samples", "minor_allele_count", "maf", 
+                                  "ref_factor", "nominal_p", "slope", "slope_se", "padj_direct", 
+                                  "padj_beta", "qvalue", "nominal_p_threshold")) %>%
   left_join(select(counts, Id, SYMBOL), by=c('geneID' = 'Id')) %>%
   select(-one_of(c('start', 'cisVariants', 'slope', 'Beta1', 'Beta2', 'nominal_p_threshold', 'nominal_p_threshold.1','padj_direct', 'padj_beta'))) %>%
   mutate(Chr=str_replace(Chr, 'chr', ''))
