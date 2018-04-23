@@ -29,7 +29,7 @@ if (dim(D)[2]==17) {
 # remove duplicates (
 # keep eGene with lowest nominal p-value (only applies when top_snp not tested in one dup)
 # if nominal p identical (because top SNP tested in both), keep lowest corrected p-value (because window includes more SNPs)
-D<-arrange(D, pval_nominal, desc(pval_beta)) %>% group_by(gene_id) %>% dplyr::slice(1) %>% ungroup()
+D<-arrange(D, pval_nominal, desc(pval_beta)) %>% group_by(gene_id) %>% dplyr::slice(1) %>% ungroup() %>% as.data.frame()
 
 # remove genes w/o variants
 nanrows <- is.na(D[, 'pval_beta'])
@@ -53,6 +53,8 @@ cat("  * eGenes @ FDR ", args$fdr, ":   ", sum(D[, 'qval']<args$fdr), "\n", sep=
 ub <- sort(D[D$qval > args$fdr, 'pval_beta'])[1]  # smallest p-value above FDR
 lb <- -sort(-D[D$qval <= args$fdr, 'pval_beta'])[1]  # largest p-value below FDR
 pthreshold <- (lb+ub)/2
+cat("smallest p-value above FDR: ", ub, "\n")
+cat("largest p-value below FDR: ", lb, "\n")
 cat("  * min p-value threshold @ FDR ", args$fdr, ": ", pthreshold, "\n", sep="")
 D[, 'pval_nominal_threshold'] <- signif(qbeta(pthreshold, D[, 'beta_shape1'], D[, 'beta_shape2'], ncp=0, lower.tail=TRUE, log.p=FALSE), 6)
 
@@ -64,4 +66,25 @@ D <- left_join(D, snp_pos) %>%
   select(chr, start, end, everything())
 
 write.table(D, gzfile(args$outfile), quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
-write.table(filter(D, qval<=.05), gzfile(args$filtered), quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+
+sig_egenes <- filter(D, qval<=args$fdr)
+
+# pval_nominal_threshold refers to pval_true_df, but the nominal pass of fastQTL only reports pval_nominal
+# in most cases, pval_true_df is larger than pval_nominal, so filtering using 
+# pval_nominal <= pval_nominal_threshold will result in non-sig SNPs being included (this
+# is mitigated by only including eQTLs from sig eGenes)
+# HOWEVER, occasionally pval_nominal is larger than pval_true_df, meaning that sig eQTLs
+# are filtered out. There's not a lot I can do about this short calculating pval_true_df
+# for everything, but I can modify pval_nominal_threshold for these genes so at least the
+# top eQTL is not filtered. Otherwise, the number of eGenes in sig_eqtls will be less than
+# the number in the eGenes file.
+# Strangely, there doesn't appear to be any relationship between true_df and pval_true_df,
+# so I have no idea how this is calculated
+
+if(nrow(filter(sig_egenes, pval_nominal > pval_true_df)) >0) {
+    cat(nrow(filter(sig_egenes, pval_nominal > pval_true_df)), " eGenes with df_corrected p-value < nominal p-value\n", sep="")
+    cat(nrow(filter(sig_egenes, pval_nominal > pval_nominal_threshold)), " sig eGenes have nominal p > threshold. Modifying threshold so top eQTL will be sig\n", sep="") 
+    sig_egenes <- sig_egenes %>% mutate(pval_nominal_threshold=ifelse(pval_nominal_threshold >= pval_nominal, pval_nominal_threshold, pval_nominal))
+}
+
+write.table(sig_egenes, gzfile(args$filtered), quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
