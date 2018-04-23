@@ -91,11 +91,41 @@ rule all:
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
        "Results/GTExOverlaps.txt",
+       "Results/snp_summary.txt",
        expand("FastQTL/sig_eqtls_{level}.{chunk}_q{fdr}.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['05', '01', '001', '0001']),
        expand("FastQTL/sig_snps_{level}_q05.gz", level=['gene', 'transcript']),
        expand("FastQTL/all_snps_{level}.all.txt.gz", level = ['gene', 'transcript']),
        expand("MatrixEQTL/{proximity}_eqtl_{level}.txt", proximity = ['cis', 'trans'], level = ['gene', 'transcript'])
 
+rule vcf_stats:
+    input:
+         "Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz"
+    output:
+        "Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.stats.txt"
+    shell:
+        "bcftools stats {input} > {output}"
+
+rule summarise_stats:
+    input:
+        expand("Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.stats.txt", run=["Imputation3", "Imputation4"], chr_num=range(1,chr_num))
+    output:
+        "Results/snp_summary.txt"
+    run:
+        results = [] # list of 3-part tupples listing imputation run, chr_num and num_snps
+        for filename in input:
+            run = filename.split('/')[1]
+            chr_num = filename.split('/')[3].split('.')[0]
+            with open(filename, 'rt') as fh:
+                for line in fh:
+                    fields = line.split('\t')
+                    if fields[0] == 'SN':
+                      if fields[2] == 'number of SNPs:':
+                         results.append((run, chr_num, fields[3].strip()))
+                         break
+                         
+        with open(output[0], 'w') as out_fh:
+            out_fh.write('\n'.join(['\t'.join(x) for x in results])+'\n')
+ 
 rule rename_samples:
     """I need to run this before merging the two files because bcftools merge throws an error
     when the header does not include the following lines:
@@ -743,4 +773,4 @@ rule matrix_eqtl:
         "(Rscript R/MatrixEQTL.R  --genotypes {input.genotypes} --p_trans {params.trans_p} "
         "--p_cis {params.cis_p} --counts {input.gene_counts} --snps {input.snp_pos} "
         "--genes {input.gene_loc} --cis {output.cis} --trans {output.trans} "
-        "--image {params.image}) 2> {log}"
+        "--cofactors {input.cofactors} --image {params.image}) 2> {log}"
