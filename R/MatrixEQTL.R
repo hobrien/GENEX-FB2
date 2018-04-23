@@ -156,5 +156,13 @@ me = Matrix_eQTL_main(
   min.pv.by.genesnp = FALSE,
   noFDRsaveMemory = FALSE);
 
+unlink(output_file_name_tra);
+unlink(output_file_name_cis);
+
+me[["trans"]][["eqtls"]] %>% left_join(snpspos, by=c('snps' = 'snp')) %>%
+  write_tsv(opt$trans)
+
+me[["cis"]][["eqtls"]] %>% left_join(snpspos, by=c('snps' = 'snp')) %>%
+  write_tsv(opt$cis)
 
 save.image(opt$image)
