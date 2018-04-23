@@ -1,7 +1,9 @@
 #setwd("~/BTSync/FetalRNAseq/Github/GENEX-FB2/")
 
 library(MatrixEQTL)
-library(tidyverse)
+library(readr)
+library(dplyr)
+library(tidyr)
 library(stringr)
 library("optparse")
 
@@ -14,55 +16,52 @@ option_list <- list(
               help="SNP positions (plink map file)"),
   make_option(c("--genes"), type="character", default="../Data/geneloc.txt",
               help="Positions of genes (geneID, chr, start, end)"),
-  make_option(c("--cofactors"), type="character", default="../Data/SampleInfo.txt",
+  make_option(c("--cofactors"), type="character", default=NULL,
               help="Information about each sample"),
   make_option(c("--cis"), type="character", default="../MatrixEQTL/cis_eqtl.txt",
               help="table of cis eQTLs"),
   make_option(c("--trans"), type="character", default="../MatrixEQTL/trans_eqtl.txt",
-              help="table of transeQTLs"),
+              help="table of trans eQTLs"),
   make_option(c("--image"), type="character", default="../MatrixEQTL/results.RData",
               help="R image file with all outfiles"),
   make_option(c("--p_trans"), type="numeric", default=1e-8,
-              help="R image file with all outfiles"),
+              help="p-value cutoff for trans eQTLs"),
   make_option(c("--p_cis"), type="numeric", default=1e-4,
-              help="R image file with all outfiles")
+              help="p-value cutoff for cis eQTLs")
  )
 opt_parser <- OptionParser(option_list=option_list)
 opt <- parse_args(opt_parser)
 
-# Import normalised counts, filter, remove 'norm.', sort
+#opt<- list(genotypes="Genotypes/Plink/sig_snps_gene.traw", p_trans=1e-8, p_cis=1e-4, counts=Data/expression_gene.bed.gz", cofactors="Peer/factors.txt", snps="Genotypes/Plink/sig_snps_gene.map", genes="Data/geneloc.txt", cis="MatrixEQTL/cis_eqtl_gene.txt", trans="MatrixEQTL/trans_eqtl_gene.txt", image="MatrixEQTL/results_gene.RData")
+#opt<- list(genotypes="Genotypes/Plink/sig_snps_transcript.traw", p_trans=1e-8, p_cis=1e-4, counts="Data/expression_transcript.bed.gz", cofactors="Peer/factors.txt", snps="Genotypes/Plink/sig_snps_transcript.map", genes="Data/transcriptloc.txt", cis="MatrixEQTL/cis_eqtl_transcript.txt", trans="MatrixEQTL/trans_eqtltranscript.txt", image="MatrixEQTL/results_transcript.RData")
+
+
+# Import normalised counts to filter genepos
 print(paste("reading", opt$counts))
-counts <- read_delim(opt$counts, "\t", escape_double = FALSE, trim_ws = TRUE) %>% 
-  filter(! is.na(padj)) %>%
-  dplyr::select(Id, starts_with('norm'))
-colnames(counts) <- str_replace(colnames(counts), 'norm\\.', '')
-counts <- counts[ , order(names(counts))]
-counts <- dplyr::select(counts, id=Id, everything())
+counts <- read_delim(opt$counts, "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  select(-one_of(c('#Chr', 'start', 'end')))
 
 print(paste("reading", opt$genes))
-genepos = read_delim(opt$genes, " ", col_names = c("id", "chr", "s1", "s2"), escape_double = FALSE, trim_ws = TRUE)
-genepos <- genepos %>% mutate(id= str_replace(id, '(ENSG\\d+)\\.\\d+', '\\1')) %>% 
-  semi_join(counts, by=c("id")) %>%
+genepos = read_delim(opt$genes, "\t", col_names = c("ID", "chr", "s1", "s2", "strand"), escape_double = FALSE, trim_ws = TRUE)
+print(paste("finished reading", opt$genes))
+genepos <- genepos %>% mutate(ID= str_replace(ID, '(ENS[GT]\\d+)\\.\\d+', '\\1')) %>%
+  select(-strand) %>%
+  semi_join(counts, by=c("ID")) %>%
   as.data.frame()
 
 # import co-variates
 # Seems that data are coerced into float/integer column-wiseduring import with 
 # the LoadFile command even though the data are encoded row-wise. I think the 
 # only solution to this is to round every thing to whole numbers.
-print(paste("reading", opt$cofactors))
-target <- read_delim(opt$cofactors, "\t", escape_double = FALSE, trim_ws = TRUE) %>%
-  mutate(Sample=as.character(Sample))
-target$Sex<-as.integer(factor(target$Sex))
-target$Batch<-as.integer(factor(target$ReadLength))
-target$RIN<- round(target$RIN, digits=0)
-target <- arrange(target, Sample)
-target <- as.data.frame(target)
-rownames(target) <- target$Sample
-target <- dplyr::select(target, -ReadLength, -Sample)
-target<- as.data.frame(t(target))
-target$id=rownames(target)
-target <- target[ , order(names(target))]
-target <- dplyr::select(target, id, everything())
+
+if (!is.null(opt$cofactors)) {
+  cofactors_t <- read_tsv(opt$cofactors)
+  cofactors <- cofactors_t[,-1] %>% as.matrix() %>% t() %>% as.data.frame()
+  colnames(cofactors) <- cofactors_t$ID
+  cofactors$ID <- rownames(cofactors)
+} else{
+  cofactors=counts[0,]
+}
 
 print(paste("reading", opt$genotypes))
 snp_tbl<- read_delim(opt$genotypes, delim='\t')
@@ -71,14 +70,14 @@ snp_tbl <- snp_tbl %>% dplyr::select(-CHR, -`(C)M`, -POS, -COUNTED, -ALT) %>%
 #snp_tbl <- snp_tbl %>%  mutate(IID = str_replace(IID, '_[ACTG]', ''))
 #snp_tbl <- dplyr::rename(snp_tbl,  `18208` = `18121`)
 snp_tbl <- snp_tbl[ , order(names(snp_tbl))]
-snp_tbl <- rename(snp_tbl, id=SNP)
-snp_tbl <- dplyr::select(snp_tbl, id, everything())
+snp_tbl <- rename(snp_tbl, ID=SNP)
+snp_tbl <- dplyr::select(snp_tbl, ID, everything())
 colnames(snp_tbl) <- str_replace(colnames(snp_tbl), '_.*', '')
 
 print("removing samples that are missing in one or more of the files")
-counts <- counts %>% dplyr::select(-one_of(setdiff(colnames(counts), colnames(target))))
+counts <- counts %>% dplyr::select(-one_of(setdiff(colnames(counts), colnames(cofactors))))
 counts <- counts %>% dplyr::select(-one_of(setdiff(colnames(counts), colnames(snp_tbl))))
-target <- target %>% dplyr::select(-one_of(setdiff(colnames(target), colnames(counts))))
+cofactors <- cofactors %>% dplyr::select(-one_of(setdiff(colnames(cofactors), colnames(counts))))
 snp_tbl <- snp_tbl %>% dplyr::select(-one_of(setdiff(colnames(snp_tbl), colnames(counts))))
 
 print("save counts file and read in as matrix EQTL object")
@@ -93,17 +92,15 @@ gene$fileSkipColumns = 1;       # one column of row labels
 gene$fileSliceSize = 2000;      # read file in slices of 2,000 rows
 gene$LoadFile(counts_file_name);
 
-
-print("save covariates file and read in as matrix EQTL object")
-covariates_file_name = tempfile()
-write_tsv(target, covariates_file_name)
-
 cvrt = SlicedData$new();
 cvrt$fileDelimiter = "\t";      # the TAB character
 cvrt$fileOmitCharacters = "NA"; # denote missing values;
 cvrt$fileSkipRows = 1;          # one row of column labels
 cvrt$fileSkipColumns = 1;       # one column of row labels
-if(length(covariates_file_name)>0) {
+if(!is.null(opt$covariates)) {
+  print("save covariates file and read in as matrix EQTL object")
+  covariates_file_name = tempfile()
+  write_tsv(cofactors, covariates_file_name)
   cvrt$LoadFile(covariates_file_name);
 }
 
