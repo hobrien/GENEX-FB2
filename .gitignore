@@ -23,6 +23,7 @@ R/*.pdf
 R/*.knit.md
 R/*.utf8.md
 R/*_cache/*
+R/Figs/*
 
 # R lib files
 R/libs/*
@@ -51,9 +52,7 @@ Genotyping/*
 Figures/*
 Peer/*
 FastQTL/*
-SMR/mybesd.*
-SMR/myquery.*
-SMR/plot/*
+SMR/*
 LDSR/annotation/*
 LDSR/env/*
 LDSR/eqtls
@@ -62,12 +61,27 @@ LDSR/Logs
 LDSR/Reference
 LDSR/results*
 GTCheck/*
+GTEx_queries
+PGC3_SZ
+PGRS
+Garfield/*
+Misc/*
+R/results.Rmd
+R/ExtraBits.Rmd
+R/17q23.Rmd
+R/CLOZUKsumstats.Rmd
+R/CorrelatedExpression.Rmd
+R/eQTL_vs_mQTL.Rmd
+R/GTex.Rmd
+R/SMR.Rmd
+Manuscript/*
 
 # Input data
 Data/*
 Genotypes/*
 GTEx_Analysis_v7_eQTL
 CLOZUK/*
+GWAS/*
 
 # Count data
 Counts/*
@@ -80,3 +94,5 @@ Shiny/GENEX-FB2/rsconnect
 # snakemake output
 dag.svg
 
+# downloaded code
+R/plot_SMR.r

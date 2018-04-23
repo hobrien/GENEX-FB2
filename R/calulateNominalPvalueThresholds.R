@@ -11,7 +11,7 @@ p <- add_argument(p, "snpfile", help="")
 p <- add_argument(p, "fdr", type="numeric", help="")
 p <- add_argument(p, "outfile", help="")
 p <- add_argument(p, "filtered", help="")
-p <- add_argument(p, "--lambda", type="numeric", help="", default=NULL)
+p <- add_argument(p, "lambda", type="numeric", help="", default=NULL)
 args <- parse_args(p)
 
 cat("Processing FastQTL output (", args$fastqtlOutput, "), with FDR=", args$fdr, "\n", sep="")

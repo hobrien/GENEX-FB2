@@ -28,7 +28,7 @@ sample_info <- read_delim("~/BTSync/FetalRNAseq/LabNotes/sample_info.txt",
          PCW = col_double()), trim_ws = TRUE)
 
 all_sample_info <- sample_info %>% mutate(PCW=floor(PCW)) %>% 
-  select(Sample=BrainBankID, Sex, PCW) %>% 
+  dplyr::select(Sample=BrainBankID, Sex, PCW) %>% 
   anti_join(SampleInfo, by="Sample") %>% 
   bind_rows(mutate(SampleInfo, PCW=as.numeric(PCW))) %>% 
   full_join(key) %>% 
@@ -36,7 +36,7 @@ all_sample_info <- sample_info %>% mutate(PCW=floor(PCW)) %>%
   mutate(FID=paste0(VCF, Index)) %>%
   filter(!(IID == '200720170085_R04C02' & Index == 32)) %>%
   filter(!(IID == '200720170117_R10C01' & Index == 19)) %>%
-  select(Sample, FID, IID, VCF, everything()) %>%
+  dplyr::select(Sample, FID, IID, VCF, everything()) %>%
   mutate(Sex=ifelse(IID %in% c('200720170117_R05C01', '200720170117_R12C01', '200720170085_R10C02'), 'Male',
                     ifelse(IID %in% c('200720170117_R06C01', '200720170117_R11C01', '200720170117_R11C02'), 
                            'Female', Sex)))
@@ -49,7 +49,7 @@ Omni25_regions_With_Code <- read_delim("../Genotyping/1KGP_Heath/Omni25.regions_
      "\t", escape_double = FALSE, col_names = FALSE, 
      trim_ws = TRUE), by='X1'
 ) %>%
-  select(IID=X1, POP=X2.x, SuperPop=X2.y, PopNum=X3.x)
+  dplyr::select(IID=X1, POP=X2.x, SuperPop=X2.y, PopNum=X3.x)
 all_sample_info <- mutate(all_sample_info, POP=VCF, SuperPop=VCF) %>% full_join(Omni25_regions_With_Code)
 ```
 
@@ -86,9 +86,9 @@ HET = read.table("../Genotyping/Merged/FB_all_het.het", h=T, as.is=T)
 
 newFID <- all_sample_info %>% 
   mutate(newIID=IID) %>% 
-  select(IID, newFID=FID, newIID) %>% 
+  dplyr::select(IID, newFID=FID, newIID) %>% 
   right_join(HET) %>% 
-  select(FID, IID, newFID, newIID)
+  dplyr::select(FID, IID, newFID, newIID)
 write_tsv(newFID, "../Genotyping/Merged/newFID.txt", col_names=FALSE)
 ```
 
@@ -274,14 +274,30 @@ cd ../Genotyping
 
 - 18655 also looks like it belongs to a different population
 ``` {r PCA}
-PCA = read.table("../Genotyping/Merged/FB_all_1kg_pca.eigenvec", h=F, as.is=T) 
+PCA = read_delim("../Genotyping/Merged/FB_all_1kg_pca.eigenvec", ' ', col_names=c('FID', 'IID', paste0('PC', 1:20))) 
 
-PCA <- full_join(all_sample_info, PCA, by=c('IID' = 'V2'))
+PCA <- full_join(all_sample_info, PCA, by=c('IID'))
 
-ggplot(filter(PCA, is.na(VCF)), aes(x=V3, y=V4, colour=SuperPop)) +
+
+EUR_mean <- filter(PCA, SuperPop=='EUR') %>% 
+  dplyr::select(starts_with('PC')) %>% 
+  summarise_all(mean, na.rm=TRUE)
+
+EUR_sd <- filter(PCA, SuperPop=='EUR') %>% 
+  dplyr::select(starts_with('PC')) %>% 
+  summarise_all(sd, na.rm=TRUE)
+
+# not sure how many PCs to use for this
+EUR_samples <-filter(PCA, !is.na(VCF) & 
+                       PC1 > EUR_mean[[1]]-2*EUR_sd[[1]] & PC1 < EUR_mean[[1]]+2*EUR_sd[[1]] &
+                       PC2 > EUR_mean[[2]]-2*EUR_sd[[2]] & PC2 < EUR_mean[[2]]+2*EUR_sd[[2]] &
+                       PC3 > EUR_mean[[3]]-2*EUR_sd[[3]] & PC3 < EUR_mean[[3]]+2*EUR_sd[[3]] )
+
+ggplot(filter(PCA, is.na(VCF)), aes(x=PC1, y=PC2, colour=SuperPop)) +
   geom_point(alpha=.2) +
-  geom_point(colour='black', size=.5, data=filter(PCA, !is.na(VCF))) +
-  geom_text(aes(label=Sample, x=V3+.001), colour='black', hjust=0, data=filter(PCA, Sample=='A225')) +
+  geom_point(colour='grey', size=.5, data=filter(PCA, !is.na(VCF))) +
+  geom_point(colour='black', size=.5, data=EUR_samples) +
+  geom_text(aes(label=Sample, x=PC1+.001), colour='black', hjust=0, data=filter(PCA, Sample=='A225')) +
   xlab('PCA1') +
   ylab('PCA2') +
   main_theme() +
@@ -289,11 +305,11 @@ ggplot(filter(PCA, is.na(VCF)), aes(x=V3, y=V4, colour=SuperPop)) +
   scale_colour_brewer(type = "qual", palette = 6) +
   guides(colour = guide_legend(override.aes = list(alpha = 1)))
 
-
-filter(PCA, SuperPop=='EUR') %>% ggplot(aes(x=V3, y=V4, colour=POP)) +
+filter(PCA, SuperPop=='EUR') %>% ggplot(aes(x=PC1, y=PC2, colour=POP)) +
   geom_point(alpha=.2) +
-  geom_point(colour='black', size=.5, data=filter(PCA, !is.na(VCF))) +
-  geom_text(aes(label=Sample, x=V3+.001), colour='black', hjust=0, data=filter(PCA, Sample=='A225')) +
+  geom_point(colour='grey', size=.5, data=filter(PCA, !is.na(VCF))) +
+  geom_point(colour='black', size=.5, data=EUR_samples) +
+  geom_text(aes(label=Sample, x=PC1+.001), colour='black', hjust=0, data=filter(PCA, Sample=='A225')) +
   xlab('PCA1') +
   ylab('PCA2') +
   main_theme() +
@@ -301,7 +317,9 @@ filter(PCA, SuperPop=='EUR') %>% ggplot(aes(x=V3, y=V4, colour=POP)) +
   scale_colour_brewer(type = "qual", palette = 6) +
   guides(colour = guide_legend(override.aes = list(alpha = 1))) +
   scale_x_continuous(limits=c(-.01, -0.0075)) +
-  scale_y_continuous(limits=c(0.015,.03))
+  scale_y_continuous(limits=c(0,.03))
+
+  
 ```
 
 ```{bash}
