@@ -24,7 +24,7 @@ library(ggbeeswarm)
 
 PlotEQTL<-function(row_num, counts, cis, target, snp_header) {
   qtl_stats <- cis[row_num,]
-  geneID <- qtl_stats$geneID
+  geneID <- qtl_stats$Id
   snp <- qtl_stats$topSNP
   snp_pos <- paste(qtl_stats$Chr, qtl_stats$pos, sep=":")
   expression <- counts %>% filter(Id == geneID) %>%  
@@ -74,16 +74,22 @@ add_links <-function(fitted) {
 filter_table <- function(fitted, p_type, p_val) {
   fitted <- filter(fitted, !is.na(UQ(as.name(p_type))) & UQ(as.name(p_type)) <= p_val ) 
   fitted <- mutate(fitted, nominal_p = as.numeric(format(nominal_p, digits=3)), qvalue = as.numeric(format(qvalue, digits=3))) %>%
-    select(Id=geneID, SYMBOL, `Top SNP`=topSNP, Chr, `SNP Pos`=pos, `TSS Distance`=distance, 
+    dplyr::select(Id, SYMBOL, `Top SNP`=topSNP, Chr, `SNP Pos`=pos, `TSS Distance`=distance, 
            `pvalue`=nominal_p, padj=qvalue)
   fitted
 }
 
 
 ################################## Load Data ##################################
+target <- read_delim("./Data/SampleInfo.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  mutate(Sample=as.character(Sample))
 
+snp_header <- system("bcftools view -h ./Data/combined_filtered.vcf.gz | tail -1", intern=TRUE) %>%
+  str_split('\t')
+
+# Gene-level analysis
 counts <- read_delim("./Data/counts.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
-  select(-Chr, -gene_type, -ChrType)
+  dplyr::select(-Chr, -gene_type, -ChrType)
 
 colnames(counts) <- str_replace_all(colnames(counts), 'norm.', '')
 
@@ -93,15 +99,28 @@ top_cis <- read_delim("./Data/egenes_gene_q05.bed.gz", "\t", escape_double = FAL
                                   " minor_allele_samples", "minor_allele_count", "maf", 
                                   "ref_factor", "nominal_p", "slope", "slope_se", "padj_direct", 
                                   "padj_beta", "qvalue", "nominal_p_threshold")) %>%
-  left_join(select(counts, Id, SYMBOL), by=c('geneID' = 'Id')) %>%
-  select(-one_of(c('start', 'cisVariants', 'slope', 'Beta1', 'Beta2', 'nominal_p_threshold', 'nominal_p_threshold.1','padj_direct', 'padj_beta'))) %>%
-  mutate(Chr=str_replace(Chr, 'chr', ''))
+  left_join(dplyr::select(counts, Id, SYMBOL), by=c('geneID' = 'Id')) %>%
+  dplyr::select(-one_of(c('start', 'cisVariants', 'slope', 'Beta1', 'Beta2', 'nominal_p_threshold', 'nominal_p_threshold.1','padj_direct', 'padj_beta'))) %>%
+  mutate(Chr=str_replace(Chr, 'chr', '')) %>%
+  dplyr::rename(Id=geneID)
 
-target <- read_delim("./Data/SampleInfo.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
-  mutate(Sample=as.character(Sample))
+# Transcript-level analysis
+counts_tr <- read_delim("./Data/counts_tr.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  dplyr::select(-one_of(c("Chr", "gene_type", "ChrType", "gene_id")))
 
-snp_header <- system("bcftools view -h ./Data/combined_filtered.vcf.gz | tail -1", intern=TRUE) %>%
-  str_split('\t')
+colnames(counts_tr) <- str_replace_all(colnames(counts_tr), 'norm.', '')
+
+top_cis_tr <- read_delim("./Data/egenes_transcript_q05.bed.gz", "\t", escape_double = FALSE, trim_ws = TRUE, 
+                      col_names=c("Chr", "start", "pos", "geneID", "cisVariants", "Beta1", 
+                                  "Beta2", "true_df", "pval_true_df", "topSNP", "distance", 
+                                  " minor_allele_samples", "minor_allele_count", "maf", 
+                                  "ref_factor", "nominal_p", "slope", "slope_se", "padj_direct", 
+                                  "padj_beta", "qvalue", "nominal_p_threshold")) %>%
+  dplyr::rename(transcriptID=geneID) %>%
+  left_join(dplyr::select(counts_tr, Id, SYMBOL), by=c('transcriptID' = 'Id')) %>%
+  dplyr::select(-one_of(c('geneID', 'start', 'cisVariants', 'slope', 'Beta1', 'Beta2', 'nominal_p_threshold', 'nominal_p_threshold.1','padj_direct', 'padj_beta'))) %>%
+  mutate(Chr=str_replace(Chr, 'chr', '')) %>%
+  dplyr::rename(Id=transcriptID)
 
 ################################## Run server ##################################
 
@@ -115,10 +134,19 @@ shinyServer(function(session, input, output) {
     )
     PlotEQTL(input$TopCisTable_rows_selected, counts, top_cis[top_cis[, input$p_type] < input$pvalue, ], target, snp_header)
   })
+  output$eQTLplotTopTr <- renderPlot({
+    validate(
+      need(input$TopCisTableTr_rows_selected != "", "Please select a row from the table")
+    )
+    PlotEQTL(input$TopCisTableTr_rows_selected, counts_tr, top_cis_tr[top_cis_tr[, input$p_type] < input$pvalue, ], target, snp_header)
+  })
   output$SexDiffTable <- DT::renderDataTable({
     DT::datatable(add_links(filter_table(fitted, input$ChrType, input$Bias, input$p_type, input$pvalue)), escape = FALSE, selection="single", caption = 'Genes exhibiting sex differences in fetal brain expression')
   })
   output$TopCisTable <- DT::renderDataTable({
     DT::datatable(add_links(filter_table(top_cis, input$p_type, input$pvalue)), escape = FALSE, selection="single", caption = 'Top eQTL for each eGENE')
+  })
+  output$TopCisTableTr <- DT::renderDataTable({
+    DT::datatable(add_links(filter_table(top_cis_tr, input$p_type, input$pvalue)), escape = FALSE, selection="single", caption = 'Top eQTL for each eTRANSCRIPT')
   })
 })

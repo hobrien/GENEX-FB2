@@ -23,16 +23,23 @@ navbarPage("Fetal Brain Sequencing (FBSeq) 1: eQTLs",
                                      min = 0, max = 1, value = 0.1, step= 0.01),
                          textInput("typedPval", "Type p-value", value=.1),
                          conditionalPanel(
-                           'input.dataset === "Top Cis"',
+                           'input.dataset === "Gene-level analysis"',
                            HTML("<strong>Select row to plot data</strong><br>"),
                            actionButton("PlotToCis", "Plot")
+                         ),
+                         conditionalPanel(
+                           'input.dataset === "Transcript-level analysis"',
+                           HTML("<strong>Select row to plot data</strong><br>"),
+                           actionButton("PlotToCisTr", "Plot")
                          )
                         ),
                        mainPanel(
                          tabsetPanel(
                            id = 'dataset',
-                           tabPanel('Top Cis', DT::dataTableOutput('TopCisTable')),
-                           bsModal("ToCisPlot", "Top Cis eQTL", "PlotToCis", size = "large",plotOutput("eQTLplotTop"))
+                           tabPanel('Gene-level analysis', DT::dataTableOutput('TopCisTable')),
+                           bsModal("ToCisPlot", "Top Cis eQTL", "PlotToCis", size = "large",plotOutput("eQTLplotTop")),
+                           tabPanel('Transcript-level analysis', DT::dataTableOutput('TopCisTableTr')),
+                           bsModal("ToCisPlotTr", "Top Cis eQTL", "PlotToCisTr", size = "large",plotOutput("eQTLplotTopTr"))
                          )   
                        )
                        
