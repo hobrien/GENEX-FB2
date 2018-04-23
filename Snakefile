@@ -765,7 +765,7 @@ rule matrix_eqtl:
         trans = "MatrixEQTL/trans_eqtl_{level}.txt",
     params:
         cis_p=1e-4,
-        trans_p=1e-8,
+        trans_p=1e-6,
         image = "MatrixEQTL/results_{level}.RData",
     log:
         "Logs/MatrixEQTL/matrix_eqtl_{level}.txt"
