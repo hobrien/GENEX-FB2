@@ -22,6 +22,9 @@ library(ggbeeswarm)
 
 ################################## Define functions ##################################
 
+# PlotEQTL(1, counts, top_cis[top_cis[, 'qvalue'] < .1, ], target, snp_header)
+#cis <- dplyr::rename(top_trans, topSNP=snps, qvalue=FDR)[top_trans[, 'qvalue'] < .1, ]
+# row_num <- 1
 PlotEQTL<-function(row_num, counts, cis, target, snp_header) {
   qtl_stats <- cis[row_num,]
   geneID <- qtl_stats$Id
@@ -74,11 +77,18 @@ add_links <-function(fitted) {
 filter_table <- function(fitted, p_type, p_val) {
   fitted <- filter(fitted, !is.na(UQ(as.name(p_type))) & UQ(as.name(p_type)) <= p_val ) 
   fitted <- mutate(fitted, nominal_p = as.numeric(format(nominal_p, digits=3)), qvalue = as.numeric(format(qvalue, digits=3))) %>%
-    dplyr::select(Id, SYMBOL, `Top SNP`=topSNP, Chr, `SNP Pos`=pos, `TSS Distance`=distance, 
-           `pvalue`=nominal_p, padj=qvalue)
+    dplyr::select(Id, SYMBOL, `Top SNP`=topSNP, Chr, `SNP Pos`=pos, `pvalue`=nominal_p, padj=qvalue)
   fitted
 }
 
+filter_trans_table <- function(row_num, cis_table, trans_table, p_type, p_val) {
+  qtl_stats <- cis_table[row_num,]
+  geneID <- qtl_stats$Id
+  fitted <- filter(trans_table, Id == geneID & !is.na(UQ(as.name(p_type))) & UQ(as.name(p_type)) <= p_val ) 
+  fitted <- mutate(fitted, nominal_p = as.numeric(format(nominal_p, digits=3)), qvalue = as.numeric(format(qvalue, digits=3))) %>%
+    dplyr::select(Id, SYMBOL, `Top SNP`=topSNP, Chr, `SNP Pos`=pos, `pvalue`=nominal_p, padj=qvalue)
+  fitted
+}
 
 ################################## Load Data ##################################
 target <- read_delim("./Data/SampleInfo.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
@@ -86,6 +96,9 @@ target <- read_delim("./Data/SampleInfo.txt", "\t", escape_double = FALSE, trim_
 
 snp_header <- system("bcftools view -h ./Data/combined_filtered.vcf.gz | tail -1", intern=TRUE) %>%
   str_split('\t')
+
+tx2gene <- read_tsv("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/tx2gene.txt",
+                    trim_ws = TRUE)
 
 # Gene-level analysis
 counts <- read_delim("./Data/counts.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
@@ -119,8 +132,25 @@ top_cis_tr <- read_delim("./Data/egenes_transcript_q05.bed.gz", "\t", escape_dou
   dplyr::rename(transcriptID=geneID) %>%
   left_join(dplyr::select(counts_tr, Id, SYMBOL), by=c('transcriptID' = 'Id')) %>%
   dplyr::select(-one_of(c('geneID', 'start', 'cisVariants', 'slope', 'Beta1', 'Beta2', 'nominal_p_threshold', 'nominal_p_threshold.1','padj_direct', 'padj_beta'))) %>%
-  mutate(Chr=str_replace(Chr, 'chr', '')) %>%
-  dplyr::rename(Id=transcriptID)
+  mutate(Chr=str_replace(Chr, 'chr', '')) 
+  
+# Trans eQTLs
+
+top_trans <- read_delim("./Data/trans_eqtl_gene.txt", 
+                              "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  left_join(dplyr::select(counts, Id, SYMBOL), by=c('gene' = 'Id')) %>%
+  dplyr::select(-one_of(c('beta', 't-stat', 'statistic'))) %>%
+  dplyr::rename(Id=gene, qvalue=FDR, topSNP=snps, nominal_p=pvalue, Chr=chr) %>%
+  mutate(Chr=str_replace(Chr, 'chr', '')) 
+
+top_trans_tr <- read_delim("./Data/trans_eqtl_transcript.txt", 
+                        "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  left_join(tx2gene, by=c('gene' = 'transcript_id')) %>%
+  left_join(dplyr::select(counts, Id, SYMBOL), by=c('gene_id' = 'Id')) %>%
+  dplyr::select(-one_of(c('beta', 't-stat', 'statistic', 'gene_id'))) %>%
+  dplyr::rename(Id=gene, qvalue=FDR, topSNP=snps, nominal_p=pvalue, Chr=chr) %>%
+  mutate(Chr=str_replace(Chr, 'chr', ''))
+
 
 ################################## Run server ##################################
 
@@ -140,13 +170,37 @@ shinyServer(function(session, input, output) {
     )
     PlotEQTL(input$TopCisTableTr_rows_selected, counts_tr, top_cis_tr[top_cis_tr[, input$p_type] < input$pvalue, ], target, snp_header)
   })
-  output$SexDiffTable <- DT::renderDataTable({
-    DT::datatable(add_links(filter_table(fitted, input$ChrType, input$Bias, input$p_type, input$pvalue)), escape = FALSE, selection="single", caption = 'Genes exhibiting sex differences in fetal brain expression')
+  output$eQTLplotTrans <- renderPlot({
+    validate(
+      need(input$TransTable_rows_selected != "", "Please select a row from the table")
+    )
+    PlotEQTL(input$TransTable_rows_selected, counts, top_trans[top_trans[, input$p_type] < input$pvalue, ], target, snp_header)
+  })
+  output$eQTLplotTransTr <- renderPlot({
+    validate(
+      need(input$TransTableTr_rows_selected != "", "Please select a row from the table")
+    )
+    PlotEQTL(input$TransTableTr_rows_selected, counts_tr, top_trans_tr[top_trans_tr[, input$p_type] < input$pvalue, ], target, snp_header)
   })
   output$TopCisTable <- DT::renderDataTable({
     DT::datatable(add_links(filter_table(top_cis, input$p_type, input$pvalue)), escape = FALSE, selection="single", caption = 'Top eQTL for each eGENE')
   })
   output$TopCisTableTr <- DT::renderDataTable({
     DT::datatable(add_links(filter_table(top_cis_tr, input$p_type, input$pvalue)), escape = FALSE, selection="single", caption = 'Top eQTL for each eTRANSCRIPT')
+  })
+  output$TransTable <- DT::renderDataTable({
+    DT::datatable(add_links(filter_table(top_trans, input$p_type, input$pvalue)), escape = FALSE, selection="single", caption = 'Top eQTL for each eGENE')
+  })
+  output$TransTable2 <- DT::renderDataTable({
+    validate(
+      need(input$TopCisTable_rows_selected != "", "Please select a row from the table")
+    )
+    DT::datatable(add_links(filter_trans_table(input$TopCisTable_rows_selected, 
+                                               top_cis[top_cis[, input$p_type] < input$pvalue, ], 
+                                               top_trans, input$p_type, input$pvalue)),
+                  escape = FALSE, selection="single", caption = 'Trans eQTLs for selected SNP')
+  })
+  output$TransTableTr <- DT::renderDataTable({
+    DT::datatable(add_links(filter_table(top_trans_tr, input$p_type, input$pvalue)), escape = FALSE, selection="single", caption = 'Top eQTL for each eTRANSCRIPT')
   })
 })
