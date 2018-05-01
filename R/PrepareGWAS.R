@@ -34,7 +34,7 @@ CLOZUK <- separate(CLOZUK, SNP, c('rsID', 'pos', 'A1.1', 'A2.2'), extra='merge')
 
 print("filtering duplicates")
 CLOZUK <- filter(CLOZUK, !rsID %in% CLOZUK$rsID[duplicated(CLOZUK$rsID)])
-print("taking lof of OR")
+print("taking log of OR")
 CLOZUK <-  mutate(CLOZUK, A1=toupper(A1), A2=toupper(A2), b=log(OR)) %>%
   select(SNP=rsID, A1, A2, freq=Freq.A1, b, se=SE, p=P, n=Ntot)
 
