@@ -31,7 +31,8 @@ navbarPage("Fetal Brain Sequencing (FBSeq) 1: eQTLs",
                          conditionalPanel(
                            'input.dataset === "Transcript-level analysis"',
                            HTML("<strong>Select row to plot data</strong><br>"),
-                           actionButton("PlotTopCisTr", "Plot")
+                           actionButton("PlotTopCisTr", "Plot Cis"),
+                           actionButton("PlotTransTr", "Plot Trans")
                          )
                         ),
                        mainPanel(
@@ -45,7 +46,8 @@ navbarPage("Fetal Brain Sequencing (FBSeq) 1: eQTLs",
                            tabPanel('Transcript-level analysis', 
                                     DT::dataTableOutput('TopCisTableTr'),
                                     DT::dataTableOutput('TransTableTr')),
-                           bsModal("TopCisPlotTr", "Top Cis eQTL", "PlotTopCisTr", size = "large",plotOutput("eQTLplotTopTr"))
+                           bsModal("TopCisPlotTr", "Top Cis eQTL", "PlotTopCisTr", size = "large",plotOutput("eQTLplotTopTr")),
+                           bsModal("TransPlotTr", "Trans eQTL", "PlotTransTr", size = "large",plotOutput("eQTLplotTransTr"))
                          )   
                        )
                        
