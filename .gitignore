@@ -80,8 +80,9 @@ Manuscript/*
 Data/*
 Genotypes/*
 GTEx_Analysis_v7_eQTL
-CLOZUK/*
+CLOZUK_GWAS_NatGen/*
 GWAS/*
+GWAS_raw/*
 
 # Count data
 Counts/*
