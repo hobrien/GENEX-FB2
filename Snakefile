@@ -95,7 +95,8 @@ rule all:
        expand("FastQTL/sig_eqtls_{level}.{chunk}_q{fdr}.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['05', '01', '001', '0001']),
        expand("FastQTL/sig_snps_{level}_q05.gz", level=['gene', 'transcript']),
        expand("FastQTL/all_snps_{level}.all.txt.gz", level = ['gene', 'transcript']),
-       expand("MatrixEQTL/{proximity}_eqtl_{level}.txt", proximity = ['cis', 'trans'], level = ['gene', 'transcript'])
+       expand("MatrixEQTL/{proximity}_eqtl_{level}.txt", proximity = ['cis', 'trans'], level = ['gene', 'transcript']),
+       expand("FastQTL/all_eqtls_{level}.all_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['10', '05'])
 
 rule vcf_stats:
     input:
