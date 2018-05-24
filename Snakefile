@@ -70,7 +70,6 @@ rule all:
     input:
        "Peer/factors_nc.txt",
        "Genotypes/Plink/scz_ld.tags",
-       "Results/GTExOverlaps.txt",
        "Results/snp_summary.txt",
        expand("FastQTL/sig_eqtls_{level}.{chunk}_q{fdr}.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['05', '01', '001', '0001']),
        expand("FastQTL/sig_snps_{level}_q05.gz", level=['gene', 'transcript']),
@@ -78,7 +77,7 @@ rule all:
        expand("MatrixEQTL/{proximity}_eqtl_{level}.txt", proximity = ['cis', 'trans'], level = ['gene', 'transcript']),
        expand("FastQTL/all_eqtls_{level}.all_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['10', '05']),
        expand("FastQTL/all_eqtls_{level}.all_gtex_{tissue}.txt.gz", level = ['gene'], tissue=['Brain_Frontal_Cortex_BA9']),
-       "Genotypes/Combined/GTEx_overlapping_snps_filtered.bed",
+       expand("GTEx_Analysis_v7_eQTL/{tissue}.bed", tissue = config['gtex_samples'])
        
 rule vcf_stats:
     input:
@@ -721,12 +720,7 @@ rule filter_eqtls:
                     if fields[0] in egenes and float(fields[6]) <= egenes[fields[0]]:
                         out_file.write(line)
 
-"""CrossMap is picky about the formatting of bed files, so I've had to discard some information
-I was able to put the geneId in the score column and the nominal_p, slope, slope_se and q
-into columns 7-10. Other columns can be recovered if needed by doing a join on the snp_id 
-and gene_id columns
-"""
-rule gtex2bed:
+rule gtex_map2bed:
     input:
         "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table.txt.gz"
     output:
@@ -736,9 +730,9 @@ rule gtex2bed:
     shell:
          "gunzip -c {input} | awk -v OFS=\"\t\" '{{print \"chr\" $1, $2-1, $2, $3, \".\", \"+\", $4, $5, $6, $7}}' > {output}"
 
-rule lift_over_bed:
+rule lift_over_map_bed:
     input:
-        bed=rules.gtex2bed.output,
+        bed=rules.gtex_map2bed.output,
         chain_file=config["reference"]["chain_file"],
     output:
         "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table.bed"
@@ -755,9 +749,9 @@ rule sort_fbseq_bed:
     shell:
         "sort -k1,1 -k2,2n {input} > {output}"
 
-rule sort_gtex_bed:
+rule sort_gtex_map_bed:
     input:
-        rules.lift_over_bed.output
+        rules.lift_over_map_bed.output
     output:
         "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table_sorted.bed"
     shell:
@@ -765,7 +759,7 @@ rule sort_gtex_bed:
         
 rule overlapping_snps_fbseq:
     input:
-        gtex = rules.sort_gtex_bed.output,
+        gtex = rules.sort_gtex_map_bed.output,
         fb_seq = rules.sort_fbseq_bed.output
     output:
         "Genotypes/Combined/GTEx_overlapping_snps.bed"
@@ -774,7 +768,7 @@ rule overlapping_snps_fbseq:
         
 rule overlapping_snps_gtex:
     input:
-        gtex = rules.sort_gtex_bed.output,
+        gtex = rules.sort_gtex_map_bed.output,
         fb_seq = rules.sort_fbseq_bed.output
     output:
         "GTEx_Analysis_v7_eQTL/FBSeq_overlapping_snps.bed"
@@ -793,15 +787,43 @@ rule combine_overlaps:
         "Genotypes/Combined/GTEx_overlapping_snps_filtered.bed"
     shell:
         "paste {input.fb_seq} {input.gtex} | awk '{{if ($7 == $15 && $8 == $16) print $0}}' > {output}"
-        
-rule summarise_overlaps:
+
+"""CrossMap is picky about the formatting of bed files, so I've had to discard some information
+I was able to put the geneId in the score column and the nominal_p, slope, slope_se and q
+into columns 7-10. Other columns can be recovered if needed by doing a join on the snp_id 
+and gene_id columns
+"""
+rule gtex2bed:
     input:
-        sig_pairs = expand("GTEx_Analysis_v7_eQTL/{tissue}.bed", tissue = config['gtex_samples']),
-        query = "FastQTL/egenes_gene.bed.gz"
+        "GTEx_Analysis_v7_eQTL/{tissue}.v7.signif_variant_gene_pairs.txt.gz"
     output:
-        "Results/GTExOverlaps.txt"
+        "GTEx_Analysis_v7_eQTL/{tissue}_hg19.bed"
+    run:
+        import fileinput
+        import warnings
+        import gzip
+        with open(output[0], 'w') as bed_file:
+            with gzip.open(input[0], 'rt') as f:
+                for line in f.readlines():
+                    line = line.strip()
+                    fields = line.split('\t')
+                    try:
+                        (chr, end, ref, alt, build) = fields[0].split('_')
+                        bed_file.write('\t'.join(['chr' + chr, str(int(end)-1), end, fields[0], fields[1], '+']+fields[6:9]+fields[11:])+'\n')
+                    except ValueError:
+                        warnings.warn("skipping the following line:\n" + line)
+
+rule lift_over_bed:
+    input:
+        bed=rules.gtex2bed.output,
+        chain_file=config["reference"]["chain_file"],
+    output:
+        "GTEx_Analysis_v7_eQTL/{tissue}.bed"
+    log:
+        "Logs/LiftoverBED/{tissue}_liftover.txt"
     shell:
-        "Rscript R/GetOverlaps.R --query {input.query} --outfile {output} {input.sig_pairs}"
+        "(CrossMap.py bed {input.chain_file} {input.bed} {output}) 2> {log}"
+
 
 rule list_snps:
     input:
