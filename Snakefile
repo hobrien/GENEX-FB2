@@ -3,7 +3,7 @@
 
 configfile: "config.yaml"
 
-qvals={'05': 0.05, '01': 0.01, '001': 0.001, '0001': 0.0001}
+qvals={'10': 0.1, '05': 0.05, '01': 0.01, '001': 0.001, '0001': 0.0001}
 
 #SMR=yaml.load(open('smr.yaml', 'r'))
 # to make DAG: snakemake -np --dag | dot -Tsvg > dag.svg
@@ -18,30 +18,10 @@ else:
 
 """
 
-After running FastQTL, I need to:
-- use permutations to determine nominal_pvalue thresholds for each gene (qvalues)
-- concatenate by chromosome and remove duplicate lines (dedup_fast_qtl)
-- make file of all eQTLs with nominal p-values below the threshold (filter_eqtls)
-    - cat different chromosomes (cat_fastqtl)
-    - make list of sig eQTL rsIDs for matrix eqtl (see below)
-    - convert file to bed file for LDSR (see LDSR Snakefile)
-- make a file all eQTLs for significant eGenes (currently part of dedup_fast_qtl)
-    - covert to format needed for SMR make_besd (prepare_smr)
-    
-- potential optimisations:
-    - qvalues produces a list of nominal_pvalue thresholds for only sig egenes
-    - any eQTL that is not for one of these eGenes is not going to show up in any of the downstream files
-    - the sig eQTL file is a subset of the file of all eQTLs for sig egenes
-    
-- therefore:
-    - use list of sig eGenes to as filter during dedup_fast_qtl
-    - use output of dedup_fast_qtl as input to filter_etql
-    
-
-zcat sig_eqtls.bed.gz | cut -f 4 > ../../Genotypes/Plink/sig_snps_gene.txt
-plink -bfile genotypes -extract sig_snps_gene.txt --recode A-transpose --out sig_snps_gene
-plink -bfile genotypes -extract sig_snps_gene.txt --recode --out sig_snps_gene
-
+New plan: 
+- filter out non-overlapping SNPs from GTEx sig pairs
+- find top SNP out of remaining eQTLs
+- pull out p-vals from all_eqtls and from sig eQTLs
 rules:
     rename_samples: replace genotyping well IDs with BrianBank IDs in imputed vcf files
     index_vcf: use bcftools to index vcf with renamed samples
@@ -96,8 +76,10 @@ rule all:
        expand("FastQTL/sig_snps_{level}_q05.gz", level=['gene', 'transcript']),
        expand("FastQTL/all_snps_{level}.all.txt.gz", level = ['gene', 'transcript']),
        expand("MatrixEQTL/{proximity}_eqtl_{level}.txt", proximity = ['cis', 'trans'], level = ['gene', 'transcript']),
-       expand("FastQTL/all_eqtls_{level}.all_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['10', '05'])
-
+       expand("FastQTL/all_eqtls_{level}.all_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['10', '05']),
+       expand("FastQTL/all_eqtls_{level}.all_gtex_{tissue}.txt.gz", level = ['gene'], tissue=['Brain_Frontal_Cortex_BA9']),
+       "Genotypes/Combined/GTEx_overlapping_snps_filtered.bed",
+       
 rule vcf_stats:
     input:
          "Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz"
@@ -380,6 +362,14 @@ rule snp_positions:
     shell:
         "bcftools view -H {input} |cut -f 1,2,3,4,5 > {output}"
 
+rule snp_positions_bed:
+    input:
+        rules.filter_tags.output
+    output:
+        "Genotypes/Combined/snp_positions.bed"
+    shell:
+        "bcftools view -H {input} | awk -v OFS=\"\t\" '{{print \"chr\" $1, $2-1, $2, $3, \".\", \"+\", $4, $5}}' > {output}"
+
 rule plink_import:
     input:
         rules.filter_tags.output
@@ -597,6 +587,50 @@ rule dedup_fast_qtl:
                     new[rsID].add(geneID)
                 unique = new
 
+rule filter_eqtls_gtex:
+    input:
+         egenes = "GTEx_Analysis_v7_eQTL/{tissue}.v7.egenes.txt.gz",
+         eqtls = lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
+    output:
+        ["FastQTL/all_eqtls_{level}." + str(x+1) + "_gtex_{tissue}.txt.gz" for x in range(100)]
+    run:
+        from collections import defaultdict
+        import gzip
+        # make set of sig eGenes
+        with gzip.open(input['egenes'], 'rt') as egene_file:
+            egenes = set()
+            for line in egene_file.readlines():
+                line = line.strip()
+                fields = line.split('\t')
+                egenes.add(fields[0].split('.')[0])
+                
+        unique = defaultdict(set)  # unique gets replaced after each file because duplicates appear to be only between adjacent files and dicts get quite large
+        for i in range(len(output)):
+            with gzip.open(output[i], 'wt') as all_eqtls:
+              with gzip.open(input['eqtls'][i], 'rt') as f:
+                new = defaultdict(set)
+                for line in f.readlines():
+                    fields = line.split('\t')
+                    geneID = fields[0]
+                    if not geneID in egenes:
+                        continue 
+                    rsID = fields[1]
+                    if rsID in unique and geneID in unique[rsID]:
+                        continue
+                    all_eqtls.write(line)
+                    new[rsID].add(geneID)
+                unique = new
+
+# columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
+rule cat_gtex_eqtls:
+    input:
+        lambda wildcards: expand("FastQTL/all_eqtls_{level}.{chunk}_gtex_{tissue}.txt.gz", level = wildcards.level, tissue=wildcards.tissue, chunk=range(1,101))
+    output:
+        "FastQTL/all_eqtls_{level}.all_gtex_{tissue}.txt.gz"
+    shell:
+        "zcat {input} | gzip -c > {output}"
+
+
 # columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
 rule cat_all_eqtls:
     input:
@@ -694,35 +728,72 @@ and gene_id columns
 """
 rule gtex2bed:
     input:
-        "GTEx_Analysis_v7_eQTL/{tissue}.v7.signif_variant_gene_pairs.txt.gz"
+        "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table.txt.gz"
     output:
-        "GTEx_Analysis_v7_eQTL/{tissue}_hg19.bed"
-    run:
-        import fileinput
-        import warnings
-        import gzip
-        with open(output[0], 'w') as bed_file:
-            with gzip.open(input[0], 'rt') as f:
-                for line in f.readlines():
-                    line = line.strip()
-                    fields = line.split('\t')
-                    try:
-                        (chr, end, ref, alt, build) = fields[0].split('_')
-                        bed_file.write('\t'.join(['chr' + chr, str(int(end)-1), end, fields[0], fields[1], '+']+fields[6:9]+fields[11:])+'\n')
-                    except ValueError:
-                        warnings.warn("skipping the following line:\n" + line)
+        "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table_hg19.bed"
+    benchmark:
+        "benchmarks/gtex_to_bed_awk.txt"
+    shell:
+         "gunzip -c {input} | awk -v OFS=\"\t\" '{{print \"chr\" $1, $2-1, $2, $3, \".\", \"+\", $4, $5, $6, $7}}' > {output}"
 
 rule lift_over_bed:
     input:
         bed=rules.gtex2bed.output,
         chain_file=config["reference"]["chain_file"],
     output:
-        "GTEx_Analysis_v7_eQTL/{tissue}.bed"
+        "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table.bed"
     log:
-        "Logs/LiftoverBED/{tissue}_liftover.txt"
+        "Logs/LiftoverBED/gtex_liftover.txt"
     shell:
         "(CrossMap.py bed {input.chain_file} {input.bed} {output}) 2> {log}"
 
+rule sort_fbseq_bed:
+    input:
+        rules.snp_positions_bed.output
+    output:
+        "Genotypes/Combined/snp_positions.bed_sorted.bed"
+    shell:
+        "sort -k1,1 -k2,2n {input} > {output}"
+
+rule sort_gtex_bed:
+    input:
+        rules.lift_over_bed.output
+    output:
+        "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table_sorted.bed"
+    shell:
+        "sort -k1,1 -k2,2n {input} > {output}"
+        
+rule overlapping_snps_fbseq:
+    input:
+        gtex = rules.sort_gtex_bed.output,
+        fb_seq = rules.sort_fbseq_bed.output
+    output:
+        "Genotypes/Combined/GTEx_overlapping_snps.bed"
+    shell:
+        "/share/apps/bedtools intersect -sorted -wa -wb -a {input.fb_seq} -b {input.gtex} > {output}"
+        
+rule overlapping_snps_gtex:
+    input:
+        gtex = rules.sort_gtex_bed.output,
+        fb_seq = rules.sort_fbseq_bed.output
+    output:
+        "GTEx_Analysis_v7_eQTL/FBSeq_overlapping_snps.bed"
+    shell:
+        "/share/apps/bedtools intersect -sorted -wa -wb -a {input.gtex} -b {input.fb_seq} > {output}"
+
+""" 5785546 SNPs tested for eQTLs
+    5678630 SNPs with overlapping positions to GTEx SNPs
+    5666564 SNPs with overlapping positions and overlapping ref/alt genotypes
+"""        
+rule combine_overlaps:
+    input:
+        gtex = rules.overlapping_snps_gtex.output,
+        fb_seq = rules.overlapping_snps_fbseq.output
+    output:
+        "Genotypes/Combined/GTEx_overlapping_snps_filtered.bed"
+    shell:
+        "paste {input.fb_seq} {input.gtex} | awk '{{if ($7 == $15 && $8 == $16) print $0}}' > {output}"
+        
 rule summarise_overlaps:
     input:
         sig_pairs = expand("GTEx_Analysis_v7_eQTL/{tissue}.bed", tissue = config['gtex_samples']),
