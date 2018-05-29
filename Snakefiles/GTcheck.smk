@@ -1,4 +1,4 @@
-from GetSequences import get_sequences
+from Helpers import get_sequences
 configfile: "config.yaml"
 
 files=get_sequences(config['seqfile'])
