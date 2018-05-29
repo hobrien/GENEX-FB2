@@ -51,13 +51,108 @@ rule make_besd:
     shell:
         "smr --qfile {input} --make-besd --out {params}"
 
-# rule prepare_gwas:
-#     input:
-#         config['gwas']
-#     output:
-#         "CLOZUK_recoded.txt"
-#     shell:
-#         "Rscript R/PrepareGWAS.R {input} {output}"
+rule plink_freqx:
+    input:
+        "LDSR/Reference/1000G_plinkfiles/1000G.mac5eur.{chr_num}.bed"
+    params:
+        prefix = "LDSR/Reference/1000G_plinkfiles/1000G.mac5eur.{chr_num}"
+    output:
+        "LDSR/Reference/1000G_plinkfiles/1000G.mac5eur.{chr_num}.frqx"
+    shell:
+        "plink -bfile {params.prefix} -freqx -out {params.prefix}"
+        
+rule cat_freq:
+    input:
+        expand("LDSR/Reference/1000G_plinkfiles/1000G.mac5eur.{chr_num}.frqx", chr_num=range(1,23))
+    output:
+        "LDSR/Reference/1000G_plinkfiles/1000G_AF.txt"
+    shell:
+        "tail -n+2 {input} | grep -v '==>' > {output}"
+        
+rule format_gwas:
+    input:
+        gwas = lambda wildcards: SMR['GWAS'][wildcards.gwas]['raw'],
+        af = "LDSR/Reference/1000G_plinkfiles/1000G_AF.txt"
+    output:
+        "GWAS/{gwas}.smr"
+    params:
+        n = lambda wildcards: SMR['GWAS'][wildcards.gwas]['n'],
+        cols = lambda wildcards: SMR['GWAS'][wildcards.gwas]['cols']
+        effect = lambda wildcards: SMR['GWAS'][wildcards.gwas]['effect']
+    run:
+        class AlleleFreq():
+            """a simple container to store allele frequencies
+            """
+            def __init__(self, fields):
+                (A1, A2, homo1_count, het_count, homo2_count) = fields
+                self.AF ={}
+                self.AF[A1] = (float(homo1_count) + float(het_count)*.5)/(float(homo1_count) + float(het_count) + float(homo2_count))
+                self.AF[A2] = 1.0 - self.AF[A1]
+            def af(self, allele):
+                try:
+                    return self.AF[allele]
+                except KeyError:
+                    raise KeyError("AlleleMismatch")
+        
+        assert(AlleleFreq(['A', 'T', 10, 10, 20]).af('A') == 0.375)
+        assert(AlleleFreq(['A', 'T', 10, 10, 20]).af('T') == 0.625)
+        try:
+            AlleleFreq(['A', 'T', 10, 10, 20]).af('G')
+        except KeyError as e:
+            assert(str(e) == "'AlleleMismatch'")
+        
+        allele_frequencies = {}
+        with open(input['af'], 'r') as af_fh:
+            for line in af_fh:
+                fields = line.split()
+                try:
+                    allele_frequencies[fields[1]] = AlleleFreq(fields[2:7])
+                except ValueError:
+                    warnings.warn("cannot get allele frequency for %s" % ' '.join(fields[2:7]))
+                    
+        with open(output[0], 'w') as output_fh:
+                output_fh.write('\t'.join(('SNP', 'A1', 'A2', 'freq', 'b', 'se', 'p', 'n')) + '\n')
+                header = 1
+                with open(input['gwas'], 'r') as gwas_fh:
+                    SNPs = set()
+                    for line in gwas_fh:
+                        line = line.strip()
+                        if header:
+                            header = 0
+                        else:
+                            fields = line.split()
+                            SNP = fields[params[cols[SNP]]].split(':')[0] # remove info after rsID                            
+                            if SNP[:3] != 'rs':
+                                continue  # remove snps without rsIDs
+                            if SNP in SNPs:
+                                continue # remove duplicate SNPs
+                            SNPs.add(SNP)
+                            A1 = fields[params[cols[A1]]]
+                            A2 = fields[params[cols[A2]]]
+                            try:
+                                freq = fields[params[cols[freq]]]
+                            except IndexError:
+                              try:
+                                freq = str(allele_frequencies[fields[0]].af(fields[1]))
+                              except KeyError as e:
+                                if str(e) == "'AlleleMismatch'":
+                                    warnings.warn("Allele mismatch for %s, skipping" % fields[0])
+                                #else:
+                                #    warnings.warn("Allele Freq missing for %s" % fields[0])
+                                continue
+                            if params['effect'] == 'or':
+                                b = str(math.log(float(fields[params[cols[b]]])))
+                            elif params['effect'] == '-beta':
+                                b = str(-1*float(fields[params[cols[b]]]))
+                            else:
+                                b = fields[params[cols[b]]]                           
+                            se = fields[params[cols[se]]] 
+                            p = fields[params[cols[p]]] 
+                            try:
+                                n = fields[params[cols[n]]]
+                            except IndexError:
+                                n = str(params['n'])
+                            output_fh.write('\t'.join(SNP, A1, A2, freq, b, se, p, n) + '\n')
 
 rule smr:
     input:
