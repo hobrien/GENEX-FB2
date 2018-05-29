@@ -50,7 +50,6 @@ rules:
     plink_import: create (plink) bed file from vcf for PCA analysis
     plink_ld_prune: LD pruning analysis on plink-formatted genotype data
     plink_pca: PCA analysis on LD-pruned plink-formatted genotype data
-    scz_ld: get list of SNPs tagged by schizophrenia index SNPs
     peer: PEER analysis on count data, using cofactors and PCA results
     format_cov:
     peer_nc: PEER analysis on count data, without cofactors or PCA results
@@ -69,7 +68,6 @@ rules:
 rule all:
     input:
        "Peer/factors_nc.txt",
-       "Genotypes/Plink/scz_ld.tags",
        "Results/snp_summary.txt",
        expand("FastQTL/sig_eqtls_{level}.{chunk}_q{fdr}.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['05', '01', '001', '0001']),
        expand("FastQTL/sig_snps_{level}_q05.gz", level=['gene', 'transcript']),
@@ -474,18 +472,6 @@ rule plink_pca:
         num_components = 3
     shell:
         "plink --bfile {params.input_prefix} --pca {params.num_components} --extract {input.included} --out {params.output_prefix}"
-
-rule scz_ld:
-    input:
-        bfile=rules.plink_import.output,
-        snps="Data/scz_snps.txt"
-    output:
-        "Genotypes/Plink/scz_ld.tags"
-    params:
-        input_prefix = "Genotypes/Plink/genotypes",
-        output_prefix = "Genotypes/Plink/scz_ld",
-    shell:
-        "plink -bfile {params.input_prefix} --show-tags {input.snps} --list-all --out {params.output_prefix}"
 
 rule peer:
     input:
