@@ -5,13 +5,8 @@ SMR=yaml.load(open('smr.yaml', 'r'))
 
 rule all:
     input: 
-       expand("SMR/mysmr_{level}_{gwas}_all.smr.gz", level = ['gene', 'transcript'], gwas=config['GWAS']),
-       expand("SMR/plot/clozuk_{level}.{gene_id}.txt", level=['gene'], gene_id=SMR['gene']['clozuk']),
-       expand("SMR/plot/clozuk_{level}.{gene_id}.txt", level=['transcript'], gene_id=SMR['transcript']['clozuk']),
-       expand("SMR/plot/neuroticism_{level}.{gene_id}.txt", level=['gene'], gene_id=SMR['gene']['neuroticism']),
-       expand("SMR/plot/neuroticism_{level}.{gene_id}.txt", level=['transcript'], gene_id=SMR['transcript']['neuroticism']),
-       expand("SMR/plot/bip_{level}.{gene_id}.txt", level=['gene'], gene_id=SMR['gene']['bip']),
-       expand("SMR/plot/mdd_{level}.{gene_id}.txt", level=['transcript'], gene_id=SMR['transcript']['mdd'])
+       expand("SMR/mysmr_{level}_{gwas}_all.smr.gz", level = ['gene', 'transcript'], gwas=SMR['GWAS']),
+       expand("SMR/plot/{gwas}_{level}.{gene_id}.txt", gwas=['clozuk'], level=['gene'], gene_id=SMR['gene']['clozuk']),
 
 rule prepare_smr:
     input:
@@ -77,7 +72,7 @@ rule format_gwas:
         "GWAS/{gwas}.smr"
     params:
         n = lambda wildcards: SMR['GWAS'][wildcards.gwas]['n'],
-        cols = lambda wildcards: SMR['GWAS'][wildcards.gwas]['cols']
+        cols = lambda wildcards: SMR['GWAS'][wildcards.gwas]['cols'],
         effect = lambda wildcards: SMR['GWAS'][wildcards.gwas]['effect']
     run:
         class AlleleFreq():
@@ -151,12 +146,15 @@ rule format_gwas:
                             try:
                                 n = fields[params[cols[n]]]
                             except IndexError:
-                                n = str(params['n'])
+                                try:
+                                    n = str(params['n'])
+                                except index_error:
+                                    continue
                             output_fh.write('\t'.join(SNP, A1, A2, freq, b, se, p, n) + '\n')
 
 rule smr:
     input:
-        gwas = lambda wildcards: config['GWAS'][wildcards.gwas],
+        gwas = rules.format_gwas.output,
         besd = rules.make_besd.output
     output:
         "SMR/mysmr_{level}_{gwas}.chr{chr}.smr"
@@ -188,7 +186,7 @@ rule genloc_smr:
 
 rule plot_smr:
     input:
-        gwas = lambda wildcards: config['GWAS'][wildcards.gwas],
+        gwas = rules.format_gwas.output,
         genloc = rules.genloc_smr.output,
         besd = lambda wildcards: expand("SMR/mybesd.{level}.chr{chr_num}.besd", level=wildcards.level, chr_num=SMR[wildcards.level][wildcards.gwas][wildcards.gene_id])
     output:
@@ -202,4 +200,4 @@ rule plot_smr:
     shell:
         "smr --bfile {params.plink_prefix} --gwas-summary {input.gwas} "
         "--beqtl-summary {params.besd_prefix} --out {params.out_prefix} --plot "
-"--probe {params.gene_id} --probe-wind 500 --gene-list {params.genloc}"
+        "--probe {params.gene_id} --probe-wind 500 --gene-list {params.genloc}"
