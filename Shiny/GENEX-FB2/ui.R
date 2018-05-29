@@ -25,29 +25,23 @@ navbarPage("Fetal Brain Sequencing (FBSeq) 1: eQTLs",
                          conditionalPanel(
                            'input.dataset === "Gene-level analysis"',
                            HTML("<strong>Select row to plot data</strong><br>"),
-                           actionButton("PlotTopCis", "Plot Cis"),
-                           actionButton("PlotTrans", "Plot Trans")
+                           actionButton("PlotTopCis", "Plot eQTL")
                          ),
                          conditionalPanel(
                            'input.dataset === "Transcript-level analysis"',
                            HTML("<strong>Select row to plot data</strong><br>"),
-                           actionButton("PlotTopCisTr", "Plot Cis"),
-                           actionButton("PlotTransTr", "Plot Trans")
+                           actionButton("PlotTopCisTr", "Plot eQTL")
                          )
                         ),
                        mainPanel(
                          tabsetPanel(
                            id = 'dataset',
                            tabPanel('Gene-level analysis', 
-                                    DT::dataTableOutput('TopCisTable'),
-                                    DT::dataTableOutput('TransTable')),
+                                    DT::dataTableOutput('TopCisTable')),
                            bsModal("TopCisPlot", "Top Cis eQTL", "PlotTopCis", size = "large",plotOutput("eQTLplotTop")),
-                           bsModal("TransPlot", "Trans eQTL", "PlotTrans", size = "large",plotOutput("eQTLplotTrans")),
                            tabPanel('Transcript-level analysis', 
-                                    DT::dataTableOutput('TopCisTableTr'),
-                                    DT::dataTableOutput('TransTableTr')),
-                           bsModal("TopCisPlotTr", "Top Cis eQTL", "PlotTopCisTr", size = "large",plotOutput("eQTLplotTopTr")),
-                           bsModal("TransPlotTr", "Trans eQTL", "PlotTransTr", size = "large",plotOutput("eQTLplotTransTr"))
+                                    DT::dataTableOutput('TopCisTableTr')),
+                           bsModal("TopCisPlotTr", "Top Cis eQTL", "PlotTopCisTr", size = "large",plotOutput("eQTLplotTopTr"))
                          )   
                        )
                        

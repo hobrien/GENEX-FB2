@@ -77,16 +77,7 @@ add_links <-function(fitted) {
 filter_table <- function(fitted, p_type, p_val) {
   fitted <- filter(fitted, !is.na(UQ(as.name(p_type))) & UQ(as.name(p_type)) <= p_val ) 
   fitted <- mutate(fitted, nominal_p = as.numeric(format(nominal_p, digits=3)), qvalue = as.numeric(format(qvalue, digits=3))) %>%
-    dplyr::select(Id, SYMBOL, `Top SNP`=topSNP, Chr, `SNP Pos`=pos, slope, `pvalue`=nominal_p, padj=qvalue, num_trans)
-  fitted
-}
-
-filter_trans_table <- function(row_num, cis_table, trans_table, p_type, p_val) {
-  qtl_stats <- cis_table[row_num,]
-  cisID <- qtl_stats$Id
-  fitted <- filter(trans_table, cis_gene == cisID & !is.na(UQ(as.name(p_type))) & UQ(as.name(p_type)) <= p_val ) 
-  fitted <- mutate(fitted, nominal_p = as.numeric(format(nominal_p, digits=3)), qvalue = as.numeric(format(qvalue, digits=3))) %>%
-    dplyr::select(Id, SYMBOL, Chr, pos, topSNP, gene_chr, `TSS Pos`=TSS, `pvalue`=nominal_p, padj=qvalue)
+    dplyr::select(Id, SYMBOL, `Top SNP`=topSNP, Chr, `SNP Pos`=pos, slope, `pvalue`=nominal_p, padj=qvalue)
   fitted
 }
 
@@ -143,31 +134,7 @@ top_cis_tr <- read_delim("./Data/egenes_transcript_q05.bed.gz", "\t", escape_dou
   dplyr::select(-one_of(c('geneID', 'start', 'cisVariants', 'Beta1', 'Beta2', 'nominal_p_threshold', 'nominal_p_threshold.1','padj_direct', 'padj_beta'))) %>%
   mutate(Chr=str_replace(Chr, 'chr', '')) 
   
-# Trans eQTLs
 
-top_trans <- read_delim("./Data/trans_eqtl_gene.txt", 
-                              "\t", escape_double = FALSE, trim_ws = TRUE) %>%
-  dplyr::rename(topSNP=variant_id)
-
-top_trans_tr <- read_delim("./Data/trans_eqtl_transcript.txt", 
-                           "\t", escape_double = FALSE, trim_ws = TRUE) %>%
-  dplyr::rename(topSNP=variant_id)
-
-# add info about the number of trans eGenes to the cis eGene table
-top_cis <- group_by(top_trans, cis_gene) %>% summarise(num_trans=n()) %>%
-  dplyr::rename(Id = cis_gene) %>%
-  right_join(top_cis) %>%
-  mutate(num_trans = ifelse(is.na(num_trans), 0, num_trans))
-
-top_cis_tr <- group_by(top_trans_tr, cis_gene) %>% summarise(num_trans=n()) %>%
-  dplyr::rename(Id = cis_gene) %>%
-  right_join(top_cis_tr) %>%
-  mutate(num_trans = ifelse(is.na(num_trans), 0, num_trans))
-
-
-# add info about gene position to top_trans
-top_trans <- top_trans %>% left_join(dplyr::rename(geneloc, gene_chr=Chr))
-top_trans_tr <- top_trans_tr %>% left_join(dplyr::rename(transcriptloc, gene_chr=Chr))
 ################################## Run server ##################################
 
 shinyServer(function(session, input, output) {
@@ -186,47 +153,11 @@ shinyServer(function(session, input, output) {
     )
     PlotEQTL(input$TopCisTableTr_rows_selected, counts_tr, top_cis_tr[top_cis_tr[, input$p_type] < input$pvalue, ], target, snp_header)
   })
-  output$eQTLplotTrans <- renderPlot({
-    validate(
-      need(input$TransTable_rows_selected != "", "Please select a row from the table")
-    )
-    trans <- filter_trans_table(input$TopCisTable_rows_selected, 
-                       top_cis[top_cis[, input$p_type] < input$pvalue, ], 
-                       top_trans, input$p_type, input$pvalue)
-    PlotEQTL(input$TransTable_rows_selected, counts, trans, target, snp_header)
-  })
-  output$eQTLplotTransTr <- renderPlot({
-    validate(
-      need(input$TransTableTr_rows_selected != "", "Please select a row from the table")
-    )
-    trans_tr <- filter_trans_table(input$TopCisTableTr_rows_selected, 
-                                top_cis_tr[top_cis_tr[, input$p_type] < input$pvalue, ], 
-                                top_trans_tr, input$p_type, input$pvalue)
-    PlotEQTL(input$TransTableTr_rows_selected, counts_tr, trans_tr, target, snp_header)
-  })
   output$TopCisTable <- DT::renderDataTable({
     DT::datatable(add_links(filter_table(top_cis, input$p_type, input$pvalue)), escape = FALSE, selection="single", caption = 'Top eQTL for each eGENE')
   })
   output$TopCisTableTr <- DT::renderDataTable({
     DT::datatable(add_links(filter_table(top_cis_tr, input$p_type, input$pvalue)), escape = FALSE, selection="single", caption = 'Top eQTL for each eTRANSCRIPT')
-  })
-  output$TransTable <- DT::renderDataTable({
-    validate(
-      need(input$TopCisTable_rows_selected != "", "Please select a row from the table")
-    )
-    DT::datatable(add_links(filter_trans_table(input$TopCisTable_rows_selected, 
-                                               top_cis[top_cis[, input$p_type] < input$pvalue, ], 
-                                               top_trans, input$p_type, input$pvalue) %>% dplyr::select(-topSNP, -Chr, -pos, `Gene Chr`=gene_chr)),
-                  escape = FALSE, selection="single", caption = 'Trans eQTLs for selected eGene')
-  })
-  output$TransTableTr <- DT::renderDataTable({
-    validate(
-      need(input$TopCisTableTr_rows_selected != "", "Please select a row from the table")
-    )
-    DT::datatable(add_links(filter_trans_table(input$TopCisTableTr_rows_selected, 
-                                               top_cis_tr[top_cis_tr[, input$p_type] < input$pvalue, ], 
-                                               top_trans_tr, input$p_type, input$pvalue) %>% dplyr::select(-topSNP, -Chr, -pos, `Gene Chr`=gene_chr)),
-                  escape = FALSE, selection="single", caption = 'Trans eQTLs for selected eTranscript')
   })
  })
 

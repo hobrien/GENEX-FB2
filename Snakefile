@@ -74,7 +74,6 @@ rule all:
        expand("FastQTL/sig_eqtls_{level}.{chunk}_q{fdr}.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['05', '01', '001', '0001']),
        expand("FastQTL/sig_snps_{level}_q05.gz", level=['gene', 'transcript']),
        expand("FastQTL/all_snps_{level}.all.txt.gz", level = ['gene', 'transcript']),
-       expand("MatrixEQTL/{proximity}_eqtl_{level}.txt", proximity = ['cis', 'trans'], level = ['gene', 'transcript']),
        expand("FastQTL/all_eqtls_{level}.all_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['10', '05']),
        expand("FastQTL/{tissue}_overlaps_{level}.txt", tissue = config['gtex_samples'], level=['gene']),
        expand("Genotypes/1KG/merged.chr{chr_num}.eigenvec", chr_num =[1])
@@ -917,47 +916,3 @@ rule gtex_overlaps:
                         rsID = fields[1]
                         if gene_id in gtex_eqtls and gtex_eqtls[gene_id] == rsID:
                             overlaps_fh.write(line)
-
-rule list_snps:
-    input:
-        lambda wildcards: expand("FastQTL/sig_eqtls_{level}.{chunk}_q05.gz", level=wildcards.level, chunk=range(1,num_permutations))
-    output:
-        "FastQTL/sig_snps_{level}_q05.txt"
-    shell:
-        "zcat {input} | cut -f 2 | sort |uniq > {output}"
-
-rule plink_extract:
-    input:
-        snps = rules.list_snps.output,
-        bfile = rules.plink_import.output
-    output:
-        "Genotypes/Plink/sig_snps_{level}.traw",
-        "Genotypes/Plink/sig_snps_{level}.map"
-    params:
-        bfile_prefix = "Genotypes/Plink/genotypes",
-        output_prefix = "Genotypes/Plink/sig_snps_{level}"
-    shell:
-        "plink -bfile {params.bfile_prefix} -extract {input.snps} --recode --out {params.output_prefix}; "
-        "plink -bfile {params.bfile_prefix} -extract {input.snps} --recode A-transpose --out {params.output_prefix}"
-
-rule matrix_eqtl:
-    input:
-        genotypes = "Genotypes/Plink/sig_snps_{level}.traw",
-        snp_pos = "Genotypes/Plink/sig_snps_{level}.map",
-        gene_counts = rules.bgzip_counts.output,
-        cofactors = "Peer/factors.txt",
-        gene_loc = "Data/{level}loc.txt"
-    output:
-        cis = "MatrixEQTL/cis_eqtl_{level}.txt",
-        trans = "MatrixEQTL/trans_eqtl_{level}.txt",
-    params:
-        cis_p=1e-4,
-        trans_p=1e-6,
-        image = "MatrixEQTL/results_{level}.RData",
-    log:
-        "Logs/MatrixEQTL/matrix_eqtl_{level}.txt"
-    shell:
-        "(Rscript R/MatrixEQTL.R  --genotypes {input.genotypes} --p_trans {params.trans_p} "
-        "--p_cis {params.cis_p} --counts {input.gene_counts} --snps {input.snp_pos} "
-        "--genes {input.gene_loc} --cis {output.cis} --trans {output.trans} "
-        "--cofactors {input.cofactors} --image {params.image}) 2> {log}"
