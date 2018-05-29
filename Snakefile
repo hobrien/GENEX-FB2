@@ -76,9 +76,8 @@ rule all:
        expand("FastQTL/all_snps_{level}.all.txt.gz", level = ['gene', 'transcript']),
        expand("MatrixEQTL/{proximity}_eqtl_{level}.txt", proximity = ['cis', 'trans'], level = ['gene', 'transcript']),
        expand("FastQTL/all_eqtls_{level}.all_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['10', '05']),
-       expand("FastQTL/all_eqtls_{level}.all_gtex_{tissue}.txt.gz", level = ['gene'], tissue=['Brain_Frontal_Cortex_BA9']),
-       expand("GTEx_Analysis_v7_eQTL/{tissue}_filtered.txt", tissue = config['gtex_samples']),
-
+       expand("FastQTL/{tissue}_overlaps_{level}.txt", tissue = config['gtex_samples'], level=['gene']),
+       expand("Genotypes/1KG/merged.chr{chr_num}.eigenvec", chr_num =[1])
        
 rule vcf_stats:
     input:
@@ -184,6 +183,79 @@ rule add_rsID:
     shell:
         "(bcftools annotate -c ID -Oz -a {input.rsID} -o {output} {input.vcf}) 2> {log}"
 
+rule filter_tags_hg19:
+    input:
+        rules.add_rsID.output
+    output:
+        "Genotypes/FilterMAF/chr{chr_num}.filtered.vcf.gz"
+    params:
+        maf=.05,
+        hwe=.0001,
+        r2=.8
+    shell:
+        "bcftools +fill-tags {input} -Ou | bcftools view -e'MAF<{params.maf} || "
+        "HWE<{params.hwe} || R2<{params.r2}' -Ou - | bcftools sort -Oz -o {output} - "
+
+rule index_filter_tags_hg19:
+    input:
+        rules.filter_tags_hg19.output
+    output:
+        "Genotypes/FilterMAF/chr{chr_num}.filtered.vcf.gz.csi"
+    shell:
+        "bcftools index {input}"
+
+rule index_1kg:
+    input:
+        "Genotypes/1KG/ALL.chr{chr_num}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz"
+    output:
+        "Genotypes/1KG/ALL.chr{chr_num}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz.csi"
+    shell:
+        "bcftools index {input}"
+
+rule merge_1kg:
+    input:
+        vcf = rules.filter_tags_hg19.output,
+        index = rules.index_filter_tags_hg19.output,
+        vcf_1kg = "Genotypes/1KG/ALL.chr{chr_num}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz",
+        index_1kg = rules.index_1kg.output
+    output:
+        "Genotypes/1KG/merged.chr{chr_num}.vcf.gz"
+    shell:
+        "bcftools merge -Ov {input.vcf} {input.vcf_1kg} | bcftools filter -e 'GT =\"./.\"' -Ob -o {output}"
+
+rule filter_chr_1kg:
+    input:
+        rules.merge_1kg.output
+    output:
+        "Genotypes/1KG/merged_filtered.chr{chr_num}.vcf.gz"
+    params:
+        chr =  "'^{chr_num}\\b'",
+    shell:
+        "bcftools view {input} | grep -e '^#' -e {params.chr} | bcftools view -Oz -o {output}"
+
+rule prune_1kg:
+    input:
+        rules.filter_chr_1kg.output
+    output:
+        bfile = "Genotypes/1KG/merged.chr{chr_num}.bed",
+        included = "Genotypes/1KG/merged.chr{chr_num}.prune.in"
+    params:
+        prefix = "Genotypes/1KG/merged.chr{chr_num}"
+    shell:
+        "plink --vcf {input} --indep-pairwise 250 5 0.2 --make-bed --out {params.prefix}"
+        
+rule pca_1kg:
+    input:
+        bfile=rules.prune_1kg.output.bfile,
+        included=rules.prune_1kg.output.included
+    output:
+        "Genotypes/1KG/merged.chr{chr_num}.eigenvec",
+    params:
+        prefix = "Genotypes/1KG/merged.chr{chr_num}",
+        num_components = 3
+    shell:
+        "plink --bfile {params.prefix} --pca {params.num_components} --extract {input.included} --out {params.prefix}"
+        
 rule lift_over:
     input:
         vcf="Genotypes/Annotated/chr{chr_num}.annotated.vcf.gz", # CrossMap appears to require a vcf file, not bcf
@@ -765,7 +837,7 @@ rule overlapping_snps_fbseq:
     output:
         "Genotypes/Combined/GTEx_overlapping_snps.bed"
     shell:
-        "/share/apps/bedtools intersect -sorted -wa -wb -a {input.fb_seq} -b {input.gtex} > {output}"
+        "/share/apps/bedtools intersect -sorted -a {input.fb_seq} -b {input.gtex} > {output}"
         
 rule overlapping_snps_gtex:
     input:
@@ -774,7 +846,7 @@ rule overlapping_snps_gtex:
     output:
         "GTEx_Analysis_v7_eQTL/FBSeq_overlapping_snps.bed"
     shell:
-        "/share/apps/bedtools intersect -sorted -wa -wb -a {input.gtex} -b {input.fb_seq} > {output}"
+        "/share/apps/bedtools intersect -sorted -a {input.gtex} -b {input.fb_seq} > {output}"
 
 """ 5785546 SNPs tested for eQTLs
     5678630 SNPs with overlapping positions to GTEx SNPs
@@ -800,17 +872,51 @@ rule filter_gtex:
     run:
         import gzip
         with open(input['overlapping_snps'][0], 'r') as combined_snp_fh:
-            combined_snps = set()
+            combined_snps = {}
             for line in combined_snp_fh:
                 fields = line.split('\t')
-                combined_snps.add(fields[11])
+                combined_snps[fields[11]] = fields[3]
                 
         with open(output[0], 'w') as bed_file:
             with gzip.open(input['sig_pairs'], 'rt') as f:
+                bed_file.write('rsID\t' + f.readline())
                 for line in f:
                     fields = line.split('\t')
                     if fields[0] in combined_snps:
-                        bed_file.write(line)
+                        bed_file.write(combined_snps[fields[0]] + '\t' + line)
+
+rule filter_gtex_egenes:
+    input:
+        rules.filter_gtex.output
+    output:
+        "GTEx_Analysis_v7_eQTL/{tissue}_egenes_filtered.txt"
+    shell:
+        "Rscript -e 'library(readr); library(dplyr); read_tsv(\"{input}\") %>% arrange(pval_nominal) %>% group_by(gene_id) %>% slice(1) %>% write_tsv(\"{output}\")'"
+
+rule gtex_overlaps:
+    input:
+        gtex = rules.filter_gtex_egenes.output,
+        eqtls = rules.cat_fast_qtl.output
+    output:
+        "FastQTL/{tissue}_overlaps_{level}.txt"
+    run:
+            import gzip
+            with open(input['gtex'][0], 'r') as gtex_fh:
+                gtex_eqtls = {}
+                for line in gtex_fh: # this will add the header to the dic, but that won't get in the way
+                    fields = line.split('\t')
+                    gene_id = fields[2].split('.')[0]
+                    rsID = fields[0]
+                    gtex_eqtls[gene_id] = rsID
+            with open(output[0], 'w') as overlaps_fh:
+                print(input['eqtls'][0])
+                with gzip.open(input['eqtls'][0], 'rt') as eqtl_fh:
+                    for line in eqtl_fh:
+                        fields = line.split('\t')
+                        gene_id = fields[0]
+                        rsID = fields[1]
+                        if gene_id in gtex_eqtls and gtex_eqtls[gene_id] == rsID:
+                            overlaps_fh.write(line)
 
 rule list_snps:
     input:
