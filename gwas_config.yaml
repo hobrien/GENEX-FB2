@@ -1,0 +1,25 @@
+GWAS:
+    luciano-neuroticism: 
+        raw: GWAS_raw/Luciano_2017/SummaryStats.txt
+        extra_cols:
+            - 0
+            - 2
+        n: 329821
+        author: luciano
+        effect: -beta
+    lambert-ad: 
+        raw: GWAS_raw/IGAP_summary_statistics/IGAP_stage_1.txt
+        extra_cols:
+            - 0
+            - 1
+        n: 54162
+        effect: beta
+    duncan-ed: 
+        raw: GWAS_raw/pgc.ed.freeze1.July2017/pgc.ed.freeze1.summarystatistics.July2017.txt
+        extra_cols:
+            - 0
+            - 2
+            - 5
+            - 9
+        n: 14477
+        effect: or

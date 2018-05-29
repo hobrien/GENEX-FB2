@@ -22,6 +22,8 @@ R/*.html
 R/*.pdf
 R/*.knit.md
 R/*.utf8.md
+R/*_cache/*
+R/Figs/*
 
 # R lib files
 R/libs/*
@@ -32,6 +34,9 @@ R/libs/*
 
 # ipython notebook checkpoints
 Python/.ipynb_checkpoints/*
+
+# Byte-compiled python
+*.pyc
 
 # Images
 *.png
@@ -46,10 +51,38 @@ MatrixEQTL_old/*
 Genotyping/*
 Figures/*
 Peer/*
+FastQTL/*
+SMR/*
+LDSR/annotation/*
+LDSR/env/*
+LDSR/eqtls
+LDSR/gwas
+LDSR/Logs
+LDSR/Reference
+LDSR/results*
+GTCheck/*
+GTEx_queries
+PGC3_SZ
+PGRS
+Garfield/*
+Misc/*
+R/results.Rmd
+R/ExtraBits.Rmd
+R/17q23.Rmd
+R/CLOZUKsumstats.Rmd
+R/CorrelatedExpression.Rmd
+R/eQTL_vs_mQTL.Rmd
+R/GTex.Rmd
+R/SMR.Rmd
+Manuscript/*
 
 # Input data
 Data/*
 Genotypes/*
+GTEx_Analysis_v7_eQTL
+CLOZUK_GWAS_NatGen/*
+GWAS/*
+GWAS_raw/*
 
 # Count data
 Counts/*
@@ -62,3 +95,5 @@ Shiny/GENEX-FB2/rsconnect
 # snakemake output
 dag.svg
 
+# downloaded code
+R/plot_SMR.r

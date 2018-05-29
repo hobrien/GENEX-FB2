@@ -11,15 +11,15 @@ option_list <- list(
               help="counts matrix (normalised, vst-transformed)"),
   make_option(c("-b", "--batch"), type="character", default=NULL, 
               help="batch factors/covariates"),
-  make_option(c("-p", "--ploidy"), type="character", default='haploid', 
-              help="haploid (genotypes=c(0,1) or diploid (genotypes=c(0,1,2))"),
+  make_option(c("-p", "--pca"), type="character", default=NULL, 
+              help="principle components"),
   make_option(c("-n", "--num_factors"), type="integer", default=25, 
               help="Number of PEER factors to estimate"),
   make_option(c("-r", "--residuals"), type="character", default="../examples/brem_data/residuals.txt", 
               help="Outfile for residuals of expression data"),
   make_option(c("-a", "--alpha"), type="character", default="../examples/brem_data/alpha.txt", 
               help="Outfile for alpha values of PEER factors"),
-  make_option(c("-o", "--out"), type="character", default="../examples/brem_data/factors.txt", 
+  make_option(c("-f", "--factors"), type="character", default="../examples/brem_data/factors.txt", 
               help="Outfile for PEER factors"),
   make_option(c("-e", "--exclude"), type="character", default='', 
               help="IDs of samples to exclude")
@@ -27,9 +27,6 @@ option_list <- list(
 opt_parser <- OptionParser(option_list=option_list)
 opt <- parse_args(opt_parser, positional_arguments=FALSE)
 exclude <- strsplit(opt$exclude, ',')[[1]]
-if (! opt$ploidy %in% c('haploid', 'diploid')) {
-  stop("ploidy type not recognised. Must be one of (haploid, diploid)")
-}
 
 if (!is.null(opt$genotypes)) {
   genfile <- read_csv(opt$genotypes) %>% as.data.frame()
@@ -37,21 +34,44 @@ if (!is.null(opt$genotypes)) {
   genfile<-colnames(genfile[,-1])
 }
 
+print("reading phenotypes")
 pheno <- read_tsv(opt$counts)
+print("finished reading phenotypes")
+pheno<-select(pheno, -one_of("#Chr", "start", "end")) # added columns in BED file for FastQTL
 colnames(pheno)[1]<-"ID" #make sure ID column is consistently named
-pheno<-select(pheno, -one_of(exclude))
+if (length(exclude) > 0) {
+  pheno<-select(pheno, -one_of(exclude))
+}
 
 if (!is.null(opt$batch)) {
   print("reading covariates")
   covariates <- read.table(opt$batch, header=TRUE, stringsAsFactors = TRUE)
-  covariates <- covariates[match(colnames(pheno[,-1]), covariates$Sample),]
+  colnames(covariates)[1]<-"ID"
+  covariates$ID <- as.character(covariates$ID)
+  covariates <- covariates[match(colnames(pheno[,-1]), covariates$ID),]
+  covariates
 }
+
+if (!is.null(opt$pca)) {
+  print("reading PCA")
+  if (is.null(opt$batch)) {
+    covariates <- pheno[1,]
+  }
+  pca<-read_delim(opt$pca, delim=' ', col_names=FALSE) %>% 
+    select(-X1) %>%
+    mutate(X2=as.character(X2))
+  print("joining PCA, covariates")
+  pca
+  covariates<-inner_join(covariates, pca, by=c('ID' = 'X2')) %>% as.data.frame()
+  print("finished joining PCA, covariates")
+}
+
 
 model=PEER()
 
 PEER_setNk(model, opt$num_factors)
 PEER_setPhenoMean(model, t(as.matrix(pheno[,-1])))
-if (!is.null(opt$batch)) {
+if (!is.null(opt$batch) | !is.null(opt$pca)) {
   print("setting covariates")
   PEER_setCovariates(model, as.matrix(mutate_all(covariates[,-1], as.numeric)))
 }
@@ -72,8 +92,8 @@ residuals %>% write_tsv(opt$residuals)
 
 factors <- PEER_getX(model) %>% as_tibble()
 factors$ID <- colnames(pheno[,-1])
-factors <- dplyr::select(factors, ID, everything()) 
-factors %>% write_tsv(opt$out)
+factors <- dplyr::select(factors, ID, everything())
+factors %>% write_tsv(opt$factors)
 
 alpha <- PEER_getAlpha(model) %>% as_tibble()
 alpha$factor <- colnames(factors[,-1])

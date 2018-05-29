@@ -8,44 +8,46 @@
 #
 
 library(shiny)
-
+library(shinyBS)
 
 # Application title
 #titlePanel("Gene Expression in the Fetal Brain: Sex Biases"),
 
-navbarPage("Gene Expression in the Fetal Brain: EQTL:",
+navbarPage("Fetal Brain Sequencing (FBSeq) 1: eQTLs",
             tabPanel("Cis eQTLs",
                      sidebarLayout(
                        sidebarPanel(
-                         radioButtons("p_type", "Maximum p-value", c('Uncorrected p-values' = 'pvalue', 'FDR corrected p-values (q-values)'= 'padj'), selected = 'padj', inline = FALSE,
+                         radioButtons("p_type", "Maximum p-value", c('Uncorrected p-values' = 'nominal_p', 'FDR corrected p-values (q-values)'= 'qvalue'), selected = 'qvalue', inline = FALSE,
                                       width = NULL),
-                         sliderInput("pvalue", textOutput("SciNotation"), 
-                                     min = -80, max = -2, value = -10),
+                         sliderInput("pvalue", "p-value:", 
+                                     min = 0, max = 1, value = 0.1, step= 0.01),
+                         textInput("typedPval", "Type p-value", value=.1),
                          conditionalPanel(
-                           'input.dataset === "Top Cis"',
-                           plotOutput("eQTLplotTop", height=200)
+                           'input.dataset === "Gene-level analysis"',
+                           HTML("<strong>Select row to plot data</strong><br>"),
+                           actionButton("PlotTopCis", "Plot Cis"),
+                           actionButton("PlotTrans", "Plot Trans")
                          ),
                          conditionalPanel(
-                           'input.dataset === "All Cis"',
-                           plotOutput("eQTLplotAll", height=200)
-                         ),
-                         conditionalPanel(
-                           'input.dataset === "Top Trans"',
-                           plotOutput("eQTLplotTransTop", height=200)
-                         ),
-                         conditionalPanel(
-                           'input.dataset === "All Trans"',
-                           plotOutput("eQTLplotTransAll", height=200)
+                           'input.dataset === "Transcript-level analysis"',
+                           HTML("<strong>Select row to plot data</strong><br>"),
+                           actionButton("PlotTopCisTr", "Plot Cis"),
+                           actionButton("PlotTransTr", "Plot Trans")
                          )
-                         
                         ),
                        mainPanel(
                          tabsetPanel(
                            id = 'dataset',
-                           tabPanel('Top Cis', DT::dataTableOutput('TopCisTable')),
-                           tabPanel('All Cis', DT::dataTableOutput('AllCisTable')),
-                           tabPanel('Top Trans', DT::dataTableOutput('TopTransTable')),
-                           tabPanel('All Trans', DT::dataTableOutput('AllTransTable'))
+                           tabPanel('Gene-level analysis', 
+                                    DT::dataTableOutput('TopCisTable'),
+                                    DT::dataTableOutput('TransTable')),
+                           bsModal("TopCisPlot", "Top Cis eQTL", "PlotTopCis", size = "large",plotOutput("eQTLplotTop")),
+                           bsModal("TransPlot", "Trans eQTL", "PlotTrans", size = "large",plotOutput("eQTLplotTrans")),
+                           tabPanel('Transcript-level analysis', 
+                                    DT::dataTableOutput('TopCisTableTr'),
+                                    DT::dataTableOutput('TransTableTr')),
+                           bsModal("TopCisPlotTr", "Top Cis eQTL", "PlotTopCisTr", size = "large",plotOutput("eQTLplotTopTr")),
+                           bsModal("TransPlotTr", "Trans eQTL", "PlotTransTr", size = "large",plotOutput("eQTLplotTransTr"))
                          )   
                        )
                        
