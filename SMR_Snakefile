@@ -5,7 +5,7 @@ SMR=yaml.load(open('smr.yaml', 'r'))
 
 rule all:
     input: 
-       expand("SMR/mysmr_{level}_{gwas}_all_q{fdr}.smr.gz", level = ['gene', 'transcript'], gwas=config['GWAS'], fdr=['10', '05']),
+       expand("SMR/mysmr_{level}_{gwas}_all.smr.gz", level = ['gene', 'transcript'], gwas=config['GWAS']),
        expand("SMR/plot/clozuk_{level}.{gene_id}.txt", level=['gene'], gene_id=SMR['gene']['clozuk']),
        expand("SMR/plot/clozuk_{level}.{gene_id}.txt", level=['transcript'], gene_id=SMR['transcript']['clozuk']),
        expand("SMR/plot/neuroticism_{level}.{gene_id}.txt", level=['gene'], gene_id=SMR['gene']['neuroticism']),
@@ -15,39 +15,39 @@ rule all:
 
 rule prepare_smr:
     input:
-        "FastQTL/all_eqtls_{level}.{chunk}_q{fdr}.txt.gz",
+        "FastQTL/all_eqtls_{level}.{chunk}_q05.txt.gz",
         "Genotypes/Combined/snp_positions.txt",
         "Data/{level}loc.txt"
     output:
-        "SMR/myquery.{level}.{chunk}_q{fdr}.txt.gz"
+        "SMR/myquery.{level}.{chunk}.txt.gz"
     shell:
         "Rscript R/PrepareSMR.R {input} {output}"
 
 rule cat_eqtls_tr:
     input:
-        lambda wildcards: expand("SMR/myquery.transcript.{chunk}_q{fdr}.txt.gz", fdr=wildcards.fdr, chunk=range(1,101))
+        expand("SMR/myquery.transcript.{chunk}.txt.gz", chunk=range(1,101))
     output:
-        ["SMR/myquery.transcript.chr" + str(x+1) + "_q{fdr}.txt" for x in range(23)]
+        ["SMR/myquery.transcript.chr" + str(x+1) + ".txt" for x in range(23)]
     shell:
         "echo -e 'SNP\tChr\tBP\tA1\tA2\tFreq\tProbe\tProbe_Chr\tProbe_bp\tGene\tOrientation\tb\tse\tp' | tee {output}; "
         "zcat {input} | awk '{{print>>\"SMR/myquery.transcript.chr\"$2\".txt\"}}'"
 
 rule cat_eqtls_gene:
     input:
-        lambda wildcards: expand("SMR/myquery.gene.{chunk}_q{fdr}.txt.gz", fdr=wildcards.fdr, chunk=range(1,101))
+        expand("SMR/myquery.gene.{chunk}.txt.gz", chunk=range(1,101))
     output:
-        ["SMR/myquery.gene.chr" + str(x+1) + "_q{fdr}.txt" for x in range(23)] 
+        ["SMR/myquery.gene.chr" + str(x+1) + ".txt" for x in range(23)] 
     shell:
         "echo -e 'SNP\tChr\tBP\tA1\tA2\tFreq\tProbe\tProbe_Chr\tProbe_bp\tGene\tOrientation\tb\tse\tp' | tee {output}; "
         "zcat {input} | awk '{{print>>\"SMR/myquery.gene.chr\"$2\".txt\"}}'"
 
 rule make_besd:
     input:
-        "SMR/myquery.{level}.chr{chr}_q{fdr}.txt"
+        "SMR/myquery.{level}.chr{chr}.txt"
     output:
-        "SMR/mybesd.{level}.chr{chr}_q{fdr}.besd"
+        "SMR/mybesd.{level}.chr{chr}.besd"
     params:
-        "SMR/mybesd.{level}.chr{chr}_q{fdr}"
+        "SMR/mybesd.{level}.chr{chr}"
     shell:
         "smr --qfile {input} --make-besd --out {params}"
 
@@ -64,11 +64,11 @@ rule smr:
         gwas = lambda wildcards: config['GWAS'][wildcards.gwas],
         besd = rules.make_besd.output
     output:
-        "SMR/mysmr_{level}_{gwas}.chr{chr}_q{fdr}.smr"
+        "SMR/mysmr_{level}_{gwas}.chr{chr}.smr"
     params:
         plink_prefix = "Genotypes/Plink/genotypes",
-        besd_prefix = "SMR/mybesd.{level}.chr{chr}_q{fdr}",
-        out_prefix = "SMR/mysmr_{level}_{gwas}.chr{chr}_q{fdr}"
+        besd_prefix = "SMR/mybesd.{level}.chr{chr}",
+        out_prefix = "SMR/mysmr_{level}_{gwas}.chr{chr}"
     threads: 1
     shell:
         "smr --bfile {params.plink_prefix} --gwas-summary {input.gwas} "
@@ -77,9 +77,9 @@ rule smr:
 
 rule cat_smr:
     input:
-        lambda wildcards: expand("SMR/mysmr_{level}_{gwas}.chr{chr}_q{fdr}.smr", fdr=wildcards.fdr, level = wildcards.level, gwas=wildcards.gwas, chr=range(1,23))
+        lambda wildcards: expand("SMR/mysmr_{level}_{gwas}.chr{chr}.smr", level = wildcards.level, gwas=wildcards.gwas, chr=range(1,23))
     output:
-        "SMR/mysmr_{level}_{gwas}_q{fdr}_all.smr.gz"
+        "SMR/mysmr_{level}_{gwas}_all.smr.gz"
     shell:
         "tail -n+2 {input} | grep -v '==>' | gzip -c > {output}"
 
@@ -107,4 +107,4 @@ rule plot_smr:
     shell:
         "smr --bfile {params.plink_prefix} --gwas-summary {input.gwas} "
         "--beqtl-summary {params.besd_prefix} --out {params.out_prefix} --plot "
-        "--probe {params.gene_id} --probe-wind 500 --gene-list {params.genloc}"
+"--probe {params.gene_id} --probe-wind 500 --gene-list {params.genloc}"
