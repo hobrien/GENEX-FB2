@@ -51,6 +51,11 @@ Omni25_regions_With_Code <- read_delim("../Genotyping/1KGP_Heath/Omni25.regions_
 ) %>%
   dplyr::select(IID=X1, POP=X2.x, SuperPop=X2.y, PopNum=X3.x)
 all_sample_info <- mutate(all_sample_info, POP=VCF, SuperPop=VCF) %>% full_join(Omni25_regions_With_Code)
+
+# use final expression matrix to get list of samples
+# 12994 was genotyped twice. We used the data from the first sample (FB_new19/200720170085_R04C02)
+included_samples <- all_sample_info %>% semi_join(tibble(Sample=colnames(counts_vst)[-1])) %>%
+  group_by(Sample) %>% dplyr::slice(1) %>% ungroup()
 ```
 
 # Merge Plink files
@@ -114,6 +119,7 @@ cat ../Data/SampleInfo.txt | cut -f 2,3,5 | perl -pe 's/Male/1/; s/Female/2/; s/
 ``` {r SexCheck}
 SexCheck <- read.table("../Genotyping/Merged/FB_all_with_sex_check.sexcheck", h=T, as.is=T)
 full_join(SexCheck, all_sample_info) %>% View()
+right_join(SexCheck, included_samples) %>% View()
 ```
 
 ```{bash plinkMerge1kg}
@@ -169,6 +175,7 @@ ggplot(filter(IMISS, is.na(VCF)), aes(x=rank, y=1-F_MISS)) +
 
 
 filter(IMISS, F_MISS > .02) %>% left_join(all_sample_info) %>% arrange(desc(F_MISS))
+filter(IMISS, F_MISS > .02) %>% inner_join(included_samples) %>% arrange(desc(F_MISS)) %>% View()
 ```
 - 53% of SNPs are complete
 - 31% have one missing call
@@ -280,22 +287,24 @@ PCA <- full_join(all_sample_info, PCA, by=c('IID'))
 
 
 EUR_mean <- filter(PCA, SuperPop=='EUR') %>% 
-  dplyr::select(starts_with('PC')) %>% 
+  dplyr::select(starts_with('PC'), -PCW) %>% 
   summarise_all(mean, na.rm=TRUE)
 
 EUR_sd <- filter(PCA, SuperPop=='EUR') %>% 
-  dplyr::select(starts_with('PC')) %>% 
+  dplyr::select(starts_with('PC'), -PCW) %>% 
   summarise_all(sd, na.rm=TRUE)
 
 # not sure how many PCs to use for this
-EUR_samples <-filter(PCA, !is.na(VCF) & 
-                       PC1 > EUR_mean[[1]]-2*EUR_sd[[1]] & PC1 < EUR_mean[[1]]+2*EUR_sd[[1]] &
-                       PC2 > EUR_mean[[2]]-2*EUR_sd[[2]] & PC2 < EUR_mean[[2]]+2*EUR_sd[[2]] &
-                       PC3 > EUR_mean[[3]]-2*EUR_sd[[3]] & PC3 < EUR_mean[[3]]+2*EUR_sd[[3]] )
+EUR_samples <- semi_join(PCA, SampleInfoCombined) %>% 
+                       filter(PC1 > EUR_mean[[1]]-2*EUR_sd[[1]] & PC1 < EUR_mean[[1]]+2*EUR_sd[[1]] &
+                       PC2 > EUR_mean[[2]]-2*EUR_sd[[2]] & PC2 < EUR_mean[[2]]+2*EUR_sd[[2]])# &
+                       #PC3 > EUR_mean[[3]]-2*EUR_sd[[3]] & PC3 < EUR_mean[[3]]+2*EUR_sd[[3]] &
+                       #PC4 > EUR_mean[[4]]-2*EUR_sd[[4]] & PC4 < EUR_mean[[4]]+2*EUR_sd[[4]] &
+                       #PC5 > EUR_mean[[5]]-2*EUR_sd[[5]] & PC5 < EUR_mean[[5]]+2*EUR_sd[[5]])
 
 ggplot(filter(PCA, is.na(VCF)), aes(x=PC1, y=PC2, colour=SuperPop)) +
   geom_point(alpha=.2) +
-  geom_point(colour='grey', size=.5, data=filter(PCA, !is.na(VCF))) +
+  geom_point(colour='gray', size=.5, data=semi_join(PCA, SampleInfoCombined)) +
   geom_point(colour='black', size=.5, data=EUR_samples) +
   geom_text(aes(label=Sample, x=PC1+.001), colour='black', hjust=0, data=filter(PCA, Sample=='A225')) +
   xlab('PCA1') +
@@ -319,7 +328,10 @@ filter(PCA, SuperPop=='EUR') %>% ggplot(aes(x=PC1, y=PC2, colour=POP)) +
   scale_x_continuous(limits=c(-.01, -0.0075)) +
   scale_y_continuous(limits=c(0,.03))
 
-  
+
+SampleInfoCombined
+
+ggsave("~/Desktop/PCA.png")  
 ```
 
 ```{bash}
