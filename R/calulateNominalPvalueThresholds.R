@@ -2,29 +2,44 @@ suppressMessages(library(dplyr))
 suppressMessages(library(readr))
 suppressMessages(library(qvalue))
 suppressMessages(library(tools))
-suppressMessages(library(argparser))
+library("optparse")
 
-# parse inputs
-p <- arg_parser("Annotates FastQTL permutation output and runs qvalue")
-p <- add_argument(p, "fastqtlOutput", help="")
-p <- add_argument(p, "snpfile", help="")
-p <- add_argument(p, "fdr", type="numeric", help="")
-p <- add_argument(p, "outfile", help="")
-p <- add_argument(p, "filtered", help="")
-p <- add_argument(p, "lambda", type="numeric", help="", default=NULL)
-args <- parse_args(p)
+option_list <- list (
+  make_option(c("-o", "--out"), type="character", default=NULL, 
+              help="Name of output file"),
+  make_option(c("-l", "--lambda"), type="numeric", default=NULL, 
+              help=""),
+  make_option(c("-f", "--fdr"), type="numeric", default=0.05, 
+              help=""),
+  make_option(c("-s", "--snps"), type="character", default=NULL, 
+              help=""),
+  make_option(c("-l", "--lambda"), type="numeric", default=NULL, 
+              help="")
+)
 
-cat("Processing FastQTL output (", args$fastqtlOutput, "), with FDR=", args$fdr, "\n", sep="")
+opt_parser <- OptionParser(option_list=option_list)
+opt <- parse_args(opt_parser, positional_arguments=TRUE)
 
-# input files have no headers
-D <- read.table(args$fastqtlOutput, header=FALSE, stringsAsFactors=FALSE)
-if (dim(D)[2]==17) {
-  colnames(D) <- c('gene_id', 'num_var', 'beta_shape1', 'beta_shape2', 'true_df', 'pval_true_df', 'variant_id', 'tss_distance',
-                   'minor_allele_samples', 'minor_allele_count', 'maf', 'ref_factor',
-                   'pval_nominal', 'slope', 'slope_se', 'pval_perm', 'pval_beta')
-} else {
-  stop("FastQTL output in unrecognized format (mismatched number of columns).")
+  
+opt$args
+
+fastqtl_results_list=vector("list", length(opt$args))
+for (i in seq_along(fastqtl_results_list)) {
+  cat("Processing FastQTL output (", opt$args[i], "), with FDR=", args$fdr, "\n", sep="")
+  
+  # input files have no headers
+  D <- read.table(opt$args[i], header=FALSE, stringsAsFactors=FALSE)
+  if (dim(D)[2]==17) {
+    colnames(D) <- c('gene_id', 'num_var', 'beta_shape1', 'beta_shape2', 'true_df', 'pval_true_df', 'variant_id', 'tss_distance',
+                     'minor_allele_samples', 'minor_allele_count', 'maf', 'ref_factor',
+                     'pval_nominal', 'slope', 'slope_se', 'pval_perm', 'pval_beta')
+  } else {
+    stop("FastQTL output in unrecognized format (mismatched number of columns).")
+  }
+  fastqtl_results_list[i] <- D
 }
+
+D <- bind_rows(smr_result_list)
 
 # remove duplicates (
 # keep eGene with lowest nominal p-value (only applies when top_snp not tested in one dup)
@@ -38,36 +53,34 @@ cat("  * Number of genes tested: ", nrow(D), " (excluding ", sum(nanrows), " gen
 cat("  * Correlation between Beta-approximated and empirical p-values: ", round(cor(D[, 'pval_perm'], D[, 'pval_beta']), 4), "\n", sep="")
 
 # calculate q-values
-if (is.null(args$lambda) || is.na(args$lambda)) {
+if (is.null(opt$options$lambda) || is.na(opt$options$lambda)) {
   Q <- qvalue(D[, 'pval_beta'])
 } else {
-  cat("  * Calculating q-values with lambda = ", args$lambda, "\n", sep="")
-  Q <- qvalue(D[, 'pval_beta'], lambda=args$lambda)
+  cat("  * Calculating q-values with lambda = ", opt$options$lambda, "\n", sep="")
+  Q <- qvalue(D[, 'pval_beta'], lambda=opt$options$lambda)
 }
 
 D$qval <- signif(Q$qvalues, 6)
 cat("  * Proportion of significant phenotypes (1-pi0): " , round((1 - Q$pi0), 2), "\n", sep="")
-cat("  * eGenes @ FDR ", args$fdr, ":   ", sum(D[, 'qval']<args$fdr), "\n", sep="")
+cat("  * eGenes @ FDR ", opt$options$fdr, ":   ", sum(D[, 'qval']<opt$options$fdr), "\n", sep="")
 
 # determine global min(p) significance threshold and calculate nominal p-value threshold for each gene
-ub <- sort(D[D$qval > args$fdr, 'pval_beta'])[1]  # smallest p-value above FDR
-lb <- -sort(-D[D$qval <= args$fdr, 'pval_beta'])[1]  # largest p-value below FDR
+ub <- sort(D[D$qval > opt$options$fdr, 'pval_beta'])[1]  # smallest p-value above FDR
+lb <- -sort(-D[D$qval <= opt$options$fdr, 'pval_beta'])[1]  # largest p-value below FDR
 pthreshold <- (lb+ub)/2
 cat("smallest p-value above FDR: ", ub, "\n")
 cat("largest p-value below FDR: ", lb, "\n")
-cat("  * min p-value threshold @ FDR ", args$fdr, ": ", pthreshold, "\n", sep="")
+cat("  * min p-value threshold @ FDR ", opt$options$fdr, ": ", pthreshold, "\n", sep="")
 D[, 'pval_nominal_threshold'] <- signif(qbeta(pthreshold, D[, 'beta_shape1'], D[, 'beta_shape2'], ncp=0, lower.tail=TRUE, log.p=FALSE), 6)
 
-snp_pos <- read_tsv(args$snpfile, col_names=FALSE)
+snp_pos <- read_tsv(opt$options$snps, col_names=FALSE)
 
 snp_pos <- mutate(snp_pos, chr=paste0('chr', X1), start = X2-1) %>%
   select(variant_id=X3, chr, start, end=X2)
 D <- left_join(D, snp_pos) %>%
   select(chr, start, end, everything())
 
-write.table(D, gzfile(args$outfile), quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
-
-sig_egenes <- filter(D, qval<=args$fdr)
+sig_egenes <- filter(D, qval<=opt$options$fdr)
 
 # pval_nominal_threshold refers to pval_true_df, but the nominal pass of fastQTL only reports pval_nominal
 # in most cases, pval_true_df is larger than pval_nominal, so filtering using 
@@ -87,4 +100,4 @@ if(nrow(filter(sig_egenes, pval_nominal > pval_true_df)) >0) {
     sig_egenes <- sig_egenes %>% mutate(pval_nominal_threshold=ifelse(pval_nominal_threshold >= pval_nominal, pval_nominal_threshold, pval_nominal))
 }
 
-write.table(sig_egenes, gzfile(args$filtered), quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+write.table(sig_egenes, gzfile(opt$options$out), quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")

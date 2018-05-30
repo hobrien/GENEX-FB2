@@ -3,26 +3,29 @@
 
 configfile: "config.yaml"
 
-qvals={'10': 0.1, '05': 0.05, '01': 0.01, '001': 0.001, '0001': 0.0001}
+qvals={'100': 1.0, '10': 0.1, '05': 0.05, '01': 0.01, '001': 0.001, '0001': 0.0001}
 
-#SMR=yaml.load(open('smr.yaml', 'r'))
 # to make DAG: snakemake -np --dag | dot -Tsvg > dag.svg
-dag = 0
+dag = 0  # set to 1 to produce DAG image without tons of duplicates 
 if dag:
     chr_num = 2
     num_permutations = 2
-    config['gtex_samples'] = ['Brain_Cortex']
 else:
    chr_num = 23
    num_permutations = 101
 
 """
-
-New plan: 
-- filter out non-overlapping SNPs from GTEx sig pairs
-- find top SNP out of remaining eQTLs
-- pull out p-vals from all_eqtls and from sig eQTLs
 rules:
+- prepare expression matrix:
+    get_gene_positions: extract coordinates of genes from gtf file
+    get_transcript_positions: extract coordinates of genes from gtf file
+    filter_counts: filter low expression genes/transcripts and remove excluded samples from matrix
+    bgzip_counts: compress BED file of counts
+    index_counts: index BED file of counts
+
+- prepare genotyping:
+    vcf_stats: run bcftools stats to collect info about imputed genotypes
+    summarise_stats: summarise snp stats across chromosomes and impputation runs
     rename_samples: replace genotyping well IDs with BrianBank IDs in imputed vcf files
     index_vcf: use bcftools to index vcf with renamed samples
     merge_vcf: merge vcf files from separate genotyping/imputation runs
@@ -37,45 +40,117 @@ rules:
     combine_chromosomes: combine vcf files for individual chromosomes unto a single vcf
     sort_vcf2: coordinate sort combined vcf (no idea why it's unsorted)
     index_vcf3: use bcftools to index combined vcf files
-    get_gene_positions: extract coordinates of genes from gtf file
-    get_transcript_positions: extract coordinates of genes from gtf file
-    filter_counts: filter low expression genes and remove excluded samples from count matrix
-    filter_transcript_counts: filter low expression genes and remove excluded samples from count matrix
-    bgzip_counts: compress BED file of  counts
-    bgzip_transcript_counts: compress BED file of  counts
-    index_counts: index BED file of counts
     select_samples: exclude sample from vcf and make sure order is the same as the counts file
     filter_tags: add info about MAF, HWE, etc. and filter SNPs
+    tabix_vcf: index final vcf file
+
+- prepare SNP info:
     snp_positions: extract genomic coordinates for each SNP (to be associated with eQTLs in q_values rule)
+    snp_positions_bed: convert snp positions to BED format for comparison with GTEx
+    gtex_map2bed: convert GTEx SNP map to bed format for liftover
+    lift_over_map_bed: lift over to hg38 coordinates
+    sort_gtex_map_bed: sort hg38 GTEx SNP map
+    overlapping_snps_fbseq: filter SNPs without GTEx SNPs at the same positions
+    overlapping_snps_gtex: filter GTEx SNPs without matching SNPs in our dataset
+    combine_overlaps: compare ref/alt alleles and SNP IDs
+
+- prepare covariates:
     plink_import: create (plink) bed file from vcf for PCA analysis
     plink_ld_prune: LD pruning analysis on plink-formatted genotype data
     plink_pca: PCA analysis on LD-pruned plink-formatted genotype data
-    peer: PEER analysis on count data, using cofactors and PCA results
-    format_cov:
     peer_nc: PEER analysis on count data, without cofactors or PCA results
-    tabix_vcf: index final vcf file
-    fast_qtl: run fast_qtl on each chunk of genome (calculate nominal p-values for all SNPs)
-    cat_fast_qtl: concatinate fast_qtl nominal pass output
-    rule dedup_fast_qtl:
-    fast_qtl_permutations: run permutation analysis on each chunk of genome (corrected p-values for top SNPs)
-    cat_permutations: concatinate fast_qtl permutation pass output
-    q_values: calculate FDR for each eQTL
-    rule gtex2bed:
-    rule lift_over_bed:
-    rule summarise_overlaps:
+    peer: PEER analysis on count data, using cofactors and PCA results
+    format_cov: combine covariates with PCs for PEER analysis
 
+- eQTL analysis and filtering
+    fast_qtl: run fast_qtl on each chunk of genome (calculate nominal p-values for all SNPs)
+    fast_qtl_permutations: run permutation analysis on each chunk of genome (corrected p-values for top SNPs)
+    q_values: qvalues for top SNP for each eGene at different FDR levels
+    all_eqtls_from_sig_egenes: all eQTL for all sig eGenes at different FDR levels
+    cat_all_eqtls: combine chunks for all eQTLs from sig eGenes (columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se)
+    distinct_snps: lowest p-value for each SNP among sig eGenes at different FDR (columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se)
+    filter_eqtls: all eQTL below p-val threshold at different FDR values (columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se)
+    filter_eqtls_gtex: 
+
+outputs:
+FastQTL/sig_egenes_{level}_q{fdr}.bed.gz: qvalues for top SNP for each eGene at different FDR levels
+    - FastQTL/sig_egenes_{level}_q100.bed.gz: qvalues for top SNP for all eGenes
+    - columns: chr, snp_start, snp_end, gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta, qval, pval_nominal_threshold
+FastQTL/all_eqtls_{level}.all_q{fdr}.gz: all eQTL for all sig eGenes at different FDR levels
+    - FastQTL/all_eqtls_{level}.all_q100.gz: all eQTL for all eGenes
+    - columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
+FastQTL/sig_snps_{level}_q{fdr}.gz: lowest p-value for each SNP among sig eGenes at different FDR levels
+    - FastQTL/sig_snps_{level}_q100.gz: lowest p-value for each SNP among all eGenes
+    - columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
+FastQTL/sig_eqtls_{level}_q{fdr}.gz: all eQTL below p-val threshold at different FDR values
+    - columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
+FastQTL/sig_eqtls_{level}_q{fdr}_gtex.gz: all eQTL below p-val threshold that were tested by GTEx (with GTEx SNP_id)
 """
+
 rule all:
     input:
        "Peer/factors_nc.txt",
        "Results/snp_summary.txt",
-       expand("FastQTL/sig_eqtls_{level}.{chunk}_q{fdr}.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['05', '01', '001', '0001']),
-       expand("FastQTL/sig_snps_{level}_q05.gz", level=['gene', 'transcript']),
-       expand("FastQTL/all_snps_{level}.all.txt.gz", level = ['gene', 'transcript']),
-       expand("FastQTL/all_eqtls_{level}.all_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['10', '05']),
-       expand("FastQTL/{tissue}_overlaps_{level}.txt", tissue = config['gtex_samples'], level=['gene']),
-       expand("Genotypes/1KG/merged.chr{chr_num}.eigenvec", chr_num =[1])
-       
+       expand(sig_egenes_{level}_q{fdr}.bed.gz, level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['100', '10', '05', '01', '001', '0001']),
+       expand("FastQTL/all_eqtls_{level}.all_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['100', '10', '05', '01', '001', '0001']),
+       expand("sig_snps_{level}_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['100', '10', '05', '01', '001', '0001']),
+       expand("FastQTL/sig_eqtls_{level}_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['10', '05', '01', '001', '0001']),
+       expand("FastQTL/sig_eqtls_{level}_q{fdr}_gtex.gz", level = ['gene', 'transcript'], fdr=['10', '05', '01', '001', '0001'])
+
+
+################################ prepare expression matrix ################################
+rule get_gene_positions:
+    input:
+        gtf=config["reference"]["gtf"]
+    output:
+        "Data/geneloc.txt"
+    params:
+        level = "genloc"
+    shell:
+        "cat {input} | awk -v OFS=\"\t\" '{{if ($3 == \"{params.level}\") print $10, $1, $4, $5, $7}}' | sed 's/[\";]//g' > {output}"
+
+rule get_transcript_positions:
+    input:
+        gtf=config["reference"]["gtf"]
+    output:
+        "Data/transcriptloc.txt"
+    params:
+        level = "transcript"
+    shell:
+        "cat {input} | awk -v OFS=\"\t\" '{{if ($3 == \"{params.level}\") print $12, $1, $4, $5, $7}}' | sed 's/[\";]//g' > {output}"
+
+rule filter_counts:
+    input:
+        gene_counts = lambda wildcards: config["count_data"][wildcards.level],
+        geneloc="Data/{level}loc.txt"
+    output:
+        "Data/expression_{level}.bed"
+    params:
+        min=5,
+        num=10,
+        excluded = "17046,16385,17048,16024,16115,11449,16972,13008"
+    shell:
+        "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
+        "--min {params.min} --num {params.num} --out {output} --exclude {params.excluded}"
+
+rule bgzip_counts:
+    input:
+        rules.filter_counts.output
+    output:
+        "Data/expression_{level}.bed.gz"
+    shell:
+        "bgzip {input}"
+
+rule index_counts:
+    input:
+        rules.bgzip_counts.output
+    output:
+        "Data/expression_{level}.bed.gz.tbi"
+    shell:
+        "tabix -p bed {input}"
+
+
+################################ prepare genotyping ################################
 rule vcf_stats:
     input:
          "Genotypes/{run}/Renamed/chr{chr_num}.dose.renamed.vcf.gz"
@@ -94,8 +169,8 @@ rule summarise_stats:
         for filename in input:
             run = filename.split('/')[1]
             chr_num = filename.split('/')[3].split('.')[0]
-            with open(filename, 'rt') as fh:
-                for line in fh:
+            with open(filename, 'rt') as snp_stat_fh:
+                for line in snp_stat_fh:
                     fields = line.split('\t')
                     if fields[0] == 'SN':
                       if fields[2] == 'number of SNPs:':
@@ -180,79 +255,6 @@ rule add_rsID:
     shell:
         "(bcftools annotate -c ID -Oz -a {input.rsID} -o {output} {input.vcf}) 2> {log}"
 
-rule filter_tags_hg19:
-    input:
-        rules.add_rsID.output
-    output:
-        "Genotypes/FilterMAF/chr{chr_num}.filtered.vcf.gz"
-    params:
-        maf=.05,
-        hwe=.0001,
-        r2=.8
-    shell:
-        "bcftools +fill-tags {input} -Ou | bcftools view -e'MAF<{params.maf} || "
-        "HWE<{params.hwe} || R2<{params.r2}' -Ou - | bcftools sort -Oz -o {output} - "
-
-rule index_filter_tags_hg19:
-    input:
-        rules.filter_tags_hg19.output
-    output:
-        "Genotypes/FilterMAF/chr{chr_num}.filtered.vcf.gz.csi"
-    shell:
-        "bcftools index {input}"
-
-rule index_1kg:
-    input:
-        "Genotypes/1KG/ALL.chr{chr_num}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz"
-    output:
-        "Genotypes/1KG/ALL.chr{chr_num}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz.csi"
-    shell:
-        "bcftools index {input}"
-
-rule merge_1kg:
-    input:
-        vcf = rules.filter_tags_hg19.output,
-        index = rules.index_filter_tags_hg19.output,
-        vcf_1kg = "Genotypes/1KG/ALL.chr{chr_num}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz",
-        index_1kg = rules.index_1kg.output
-    output:
-        "Genotypes/1KG/merged.chr{chr_num}.vcf.gz"
-    shell:
-        "bcftools merge -Ov {input.vcf} {input.vcf_1kg} | bcftools filter -e 'GT =\"./.\"' -Ob -o {output}"
-
-rule filter_chr_1kg:
-    input:
-        rules.merge_1kg.output
-    output:
-        "Genotypes/1KG/merged_filtered.chr{chr_num}.vcf.gz"
-    params:
-        chr =  "'^{chr_num}\\b'",
-    shell:
-        "bcftools view {input} | grep -e '^#' -e {params.chr} | bcftools view -Oz -o {output}"
-
-rule prune_1kg:
-    input:
-        rules.filter_chr_1kg.output
-    output:
-        bfile = "Genotypes/1KG/merged.chr{chr_num}.bed",
-        included = "Genotypes/1KG/merged.chr{chr_num}.prune.in"
-    params:
-        prefix = "Genotypes/1KG/merged.chr{chr_num}"
-    shell:
-        "plink --vcf {input} --indep-pairwise 250 5 0.2 --make-bed --out {params.prefix}"
-        
-rule pca_1kg:
-    input:
-        bfile=rules.prune_1kg.output.bfile,
-        included=rules.prune_1kg.output.included
-    output:
-        "Genotypes/1KG/merged.chr{chr_num}.eigenvec",
-    params:
-        prefix = "Genotypes/1KG/merged.chr{chr_num}",
-        num_components = 3
-    shell:
-        "plink --bfile {params.prefix} --pca {params.num_components} --extract {input.included} --out {params.prefix}"
-        
 rule lift_over:
     input:
         vcf="Genotypes/Annotated/chr{chr_num}.annotated.vcf.gz", # CrossMap appears to require a vcf file, not bcf
@@ -349,56 +351,6 @@ rule index_vcf3:
     shell:
         "bcftools index {input}"
 
-rule get_gene_positions:
-    input:
-        gtf=config["reference"]["gtf"]
-    output:
-        "Data/geneloc.txt"
-    params:
-        level = "genloc"
-    shell:
-        "cat {input} | awk -v OFS=\"\t\" '{{if ($3 == \"{params.level}\") print $10, $1, $4, $5, $7}}' | sed 's/[\";]//g' > {output}"
-
-rule get_transcript_positions:
-    input:
-        gtf=config["reference"]["gtf"]
-    output:
-        "Data/transcriptloc.txt"
-    params:
-        level = "transcript"
-    shell:
-        "cat {input} | awk -v OFS=\"\t\" '{{if ($3 == \"{params.level}\") print $12, $1, $4, $5, $7}}' | sed 's/[\";]//g' > {output}"
-
-rule filter_counts:
-    input:
-        gene_counts = lambda wildcards: config["count_data"][wildcards.level],
-        geneloc="Data/{level}loc.txt"
-    output:
-        "Data/expression_{level}.bed"
-    params:
-        min=5,
-        num=10,
-        excluded = "17046,16385,17048,16024,16115,11449,16972,13008"
-    shell:
-        "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
-        "--min {params.min} --num {params.num} --out {output} --exclude {params.excluded}"
-
-rule bgzip_counts:
-    input:
-        rules.filter_counts.output
-    output:
-        "Data/expression_{level}.bed.gz"
-    shell:
-        "bgzip {input}"
-
-rule index_counts:
-    input:
-        rules.bgzip_counts.output
-    output:
-        "Data/expression_{level}.bed.gz.tbi"
-    shell:
-        "tabix -p bed {input}"
-
 rule select_samples:
     input:
         expression = "Data/expression_gene.bed.gz",
@@ -423,6 +375,16 @@ rule filter_tags:
         "bcftools +fill-tags {input} -Ou | bcftools view -e'MAF<{params.maf} || "
         "HWE<{params.hwe} || R2<{params.r2}' -Ou - | bcftools sort -Oz -o {output} - "
 
+rule tabix_vcf:
+    input:
+        rules.filter_tags.output
+    output:
+        "Genotypes/Combined/combined_filtered.vcf.gz.tbi"
+    shell:
+        "tabix -p vcf {input}"
+
+
+################################ prepare SNP info ################################
 rule snp_positions:
     input:
         rules.filter_tags.output
@@ -437,8 +399,66 @@ rule snp_positions_bed:
     output:
         "Genotypes/Combined/snp_positions.bed"
     shell:
-        "bcftools view -H {input} | awk -v OFS=\"\t\" '{{print \"chr\" $1, $2-1, $2, $3, \".\", \"+\", $4, $5}}' > {output}"
+        "bcftools view -H {input} | awk -v OFS=\"\t\" '{{print \"chr\" $1, $2-1, $2, $3, \".\", \"+\", $4, $5}}' | sort -k1,1 -k2,2n > {output}"
 
+rule gtex_map2bed:
+    input:
+        "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table.txt.gz"
+    output:
+        "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table_hg19.bed"
+    benchmark:
+        "benchmarks/gtex_to_bed_awk.txt"
+    shell:
+         "gunzip -c {input} | awk -v OFS=\"\t\" '{{print \"chr\" $1, $2-1, $2, $3, \".\", \"+\", $4, $5, $6, $7}}' > {output}"
+
+rule lift_over_map_bed:
+    input:
+        bed=rules.gtex_map2bed.output,
+        chain_file=config["reference"]["chain_file"],
+    output:
+        "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table.bed"
+    log:
+        "Logs/LiftoverBED/gtex_liftover.txt"
+    shell:
+"(CrossMap.py bed {input.chain_file} {input.bed} {output}) 2> {log}"
+
+rule sort_gtex_map_bed:
+    input:
+        rules.lift_over_map_bed.output
+    output:
+        "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table_sorted.bed"
+    shell:
+        "sort -k1,1 -k2,2n {input} > {output}"
+        
+rule overlapping_snps_fbseq:
+    input:
+        gtex = rules.sort_gtex_map_bed.output,
+        fb_seq = rules.snp_positions_bed.output
+    output:
+        "Genotypes/Combined/GTEx_overlapping_snps.bed"
+    shell:
+        "/share/apps/bedtools intersect -sorted -a {input.fb_seq} -b {input.gtex} > {output}"
+        
+rule overlapping_snps_gtex:
+    input:
+        gtex = rules.sort_gtex_map_bed.output,
+        fb_seq = rules.snp_positions_bed.output
+    output:
+        "GTEx_Analysis_v7_eQTL/FBSeq_overlapping_snps.bed"
+    shell:
+        "/share/apps/bedtools intersect -sorted -a {input.gtex} -b {input.fb_seq} > {output}"
+
+rule combine_overlaps:
+    input:
+        gtex = rules.overlapping_snps_gtex.output,
+        fb_seq = rules.overlapping_snps_fbseq.output
+    output:
+        "Genotypes/Combined/GTEx_overlapping_snps_filtered.bed"
+    shell:
+        "paste {input.fb_seq} {input.gtex} | awk '{{if ($7 == $15 && $8 == $16) print $0}}' > {output}"
+        
+
+################################ prepare covariates ################################
 rule plink_import:
     input:
         rules.filter_tags.output
@@ -473,6 +493,24 @@ rule plink_pca:
     shell:
         "plink --bfile {params.input_prefix} --pca {params.num_components} --extract {input.included} --out {params.output_prefix}"
 
+rule peer_nc:
+    input:
+        counts = "Data/expression_gene.bed.gz"
+    output:
+        "Peer/factors_nc.txt"
+    params:
+        residuals = "Peer/residuals_nc.txt",
+        alpha = "Peer/alpha_nc.txt",
+        num_peer = 10
+    log:
+        "Logs/PEER/peer_nc.txt"
+    conda:
+        "env/peer.yaml"
+    shell:
+        "(Rscript /c8000xd3/rnaseq-heath/GENEX-FB2/R/PEER.R  "
+        "-n {params.num_peer} -c {input.counts} "
+        "-r {params.residuals} -f {output}  -a {params.alpha}) > {log}"
+
 rule peer:
     input:
         pca = rules.plink_pca.output,
@@ -505,32 +543,8 @@ rule format_cov:
         cov['V4'] = 'batch' + cov['V4'].astype(str) # change batch to string (categorical)
         cov.transpose().to_csv(output[0], sep='\t', header=False)
         
-rule peer_nc:
-    input:
-        counts = "Data/expression_gene.bed.gz"
-    output:
-        "Peer/factors_nc.txt"
-    params:
-        residuals = "Peer/residuals_nc.txt",
-        alpha = "Peer/alpha_nc.txt",
-        num_peer = 10
-    log:
-        "Logs/PEER/peer_nc.txt"
-    conda:
-        "env/peer.yaml"
-    shell:
-        "(Rscript /c8000xd3/rnaseq-heath/GENEX-FB2/R/PEER.R  "
-        "-n {params.num_peer} -c {input.counts} "
-        "-r {params.residuals} -f {output}  -a {params.alpha}) > {log}"
 
-rule tabix_vcf:
-    input:
-        rules.filter_tags.output
-    output:
-        "Genotypes/Combined/combined_filtered.vcf.gz.tbi"
-    shell:
-        "tabix -p vcf {input}"
-
+############################## eQTL analysis and filtering ###############################
 rule fast_qtl:
     input:
         counts = rules.bgzip_counts.output,
@@ -552,15 +566,7 @@ rule fast_qtl:
         "--bed {input.counts} --chunk {params.chunk} {params.num_chunks} "
         "--cov {input.covariates} --out {output} -- log {log} --normal"
 
-# columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
-rule cat_fast_qtl:
-    input:
-        lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
-    output:
-        "FastQTL/FastQTL_{level}.all.txt.gz"
-    shell:
-        "zcat {input} | gzip -c > {output}"
-
+#columns: gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta
 rule fast_qtl_permutations:
     input:
         counts = rules.bgzip_counts.output,
@@ -582,35 +588,26 @@ rule fast_qtl_permutations:
         " --bed {input.counts} --chunk {params.chunk} {params.num_chunks}"
         " --permute {params.min} {params.max} --out {output} -- log {log}"
 
-#columns: gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta
-rule cat_permutations:
-    input:
-        lambda wildcards: expand("FastQTL/permutations.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
-    output:
-        "FastQTL/permutations_{level}.all.txt.gz"
-    shell:
-        "zcat {input} | gzip -c > {output}"
-
 # columns: chr, snp_start, snp_end, gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta, qval, pval_nominal_threshold
 # the tss_distance doesn't appear to take strand into account, ie; it is correct for + genes, but the distance from the transcription termination site for - genes
 # this means I will have to recalculate these values or correct them before plotting
 
 rule q_values:
     input:
-        eqtls=rules.cat_permutations.output,
-        snp_pos=rules.snp_positions.output
+        lambda wildcards: eqtls = expand("FastQTL/permutations.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
+        snp_pos = rules.snp_positions.output
     output:
-        all_genes = "FastQTL/egenes_{level}_q{fdr}.bed.gz",
-        filtered_genes = "FastQTL/sig_egenes_{level}_q{fdr}.bed.gz"
+        "FastQTL/sig_egenes_{level}_q{fdr}.bed.gz"
     params:
         fdr = lambda wildcards: qvals[wildcards.fdr]
     log:
         "Logs/FastQTL/q_values_{level}_q{fdr}.txt"
     shell:
-        "(Rscript R/calulateNominalPvalueThresholds.R {input.eqtls} {input.snp_pos} {params.fdr} {output.all_genes} {output.filtered_genes} ) > {log}"
+        "(Rscript R/calulateNominalPvalueThresholds.R {input.eqtls} {input.snp_pos} {params.fdr} {output} ) > {log}"
 
 # filter out eQTLs from eGenes that are non-significant (also removes duplicate lines)
-rule dedup_fast_qtl:
+# columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
+rule all_eqtls_from_sig_egenes:
     input:
         eqtls = lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
         egenes = "FastQTL/sig_egenes_{level}_q{fdr}.bed.gz"
@@ -620,19 +617,19 @@ rule dedup_fast_qtl:
         from collections import defaultdict
         import gzip
         # make set of sig eGenes
-        with gzip.open(input['egenes'], 'rt') as egene_file:
+        with gzip.open(input['egenes'], 'rt') as egene_fh:
             egenes = set()
-            for line in egene_file.readlines():
+            for line in egene_fh:
                 line = line.strip()
                 fields = line.split('\t')
                 egenes.add(fields[3])
                 
         unique = defaultdict(set)  # unique gets replaced after each file because duplicates appear to be only between adjacent files and dicts get quite large
         for i in range(len(output)):
-            with gzip.open(output[i], 'wt') as all_eqtls:
-              with gzip.open(input['eqtls'][i], 'rt') as f:
+            with gzip.open(output[i], 'wt') as out_fh:
+              with gzip.open(input['eqtls'][i], 'rt') as eqtl_fh:
                 new = defaultdict(set)
-                for line in f.readlines():
+                for line in eqtl_fh:
                     fields = line.split('\t')
                     geneID = fields[0]
                     if not geneID in egenes:
@@ -640,55 +637,11 @@ rule dedup_fast_qtl:
                     rsID = fields[1]
                     if rsID in unique and geneID in unique[rsID]:
                         continue
-                    all_eqtls.write(line)
+                    out_fh.write(line)
                     new[rsID].add(geneID)
                 unique = new
 
-rule filter_eqtls_gtex:
-    input:
-         egenes = "GTEx_Analysis_v7_eQTL/{tissue}.v7.egenes.txt.gz",
-         eqtls = lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
-    output:
-        ["FastQTL/all_eqtls_{level}." + str(x+1) + "_gtex_{tissue}.txt.gz" for x in range(100)]
-    run:
-        from collections import defaultdict
-        import gzip
-        # make set of sig eGenes
-        with gzip.open(input['egenes'], 'rt') as egene_file:
-            egenes = set()
-            for line in egene_file.readlines():
-                line = line.strip()
-                fields = line.split('\t')
-                egenes.add(fields[0].split('.')[0])
-                
-        unique = defaultdict(set)  # unique gets replaced after each file because duplicates appear to be only between adjacent files and dicts get quite large
-        for i in range(len(output)):
-            with gzip.open(output[i], 'wt') as all_eqtls:
-              with gzip.open(input['eqtls'][i], 'rt') as f:
-                new = defaultdict(set)
-                for line in f.readlines():
-                    fields = line.split('\t')
-                    geneID = fields[0]
-                    if not geneID in egenes:
-                        continue 
-                    rsID = fields[1]
-                    if rsID in unique and geneID in unique[rsID]:
-                        continue
-                    all_eqtls.write(line)
-                    new[rsID].add(geneID)
-                unique = new
-
-# columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
-rule cat_gtex_eqtls:
-    input:
-        lambda wildcards: expand("FastQTL/all_eqtls_{level}.{chunk}_gtex_{tissue}.txt.gz", level = wildcards.level, tissue=wildcards.tissue, chunk=range(1,101))
-    output:
-        "FastQTL/all_eqtls_{level}.all_gtex_{tissue}.txt.gz"
-    shell:
-        "zcat {input} | gzip -c > {output}"
-
-
-# columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
+# combine chunks for all eQTLs from sig eGenes 
 rule cat_all_eqtls:
     input:
         lambda wildcards: expand("FastQTL/all_eqtls_{level}.{chunk}_q{fdr}.txt.gz", level = wildcards.level, fdr=wildcards.fdr, chunk=range(1,101))
@@ -707,198 +660,59 @@ rule distinct_snps:
     shell:
         "Rscript R/TopSNPs.R {input.eqtls} {input.snp_pos} {output}"
 
-# This gives the lowest p-value for all SNPs
-# for memory/performance reasons, this is going to work on adjacent chunks of the genome
-# it's possible that this will result in some duplicated SNPs, but this is easy enough to
-# check and modify as needed
-rule dedup_snps:
-    input:
-        eqtls = lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
-    output:
-        ["FastQTL/all_snps_{level}." + str(x+1) + ".txt.gz" for x in range(100)]
-    run:
-        import gzip
-
-        unique = {}  # unique gets replaced after each file because duplicates appear to be only between adjacent files and dicts get quite large
-        for i in range(len(output)):
-            with gzip.open(input['eqtls'][i], 'rt') as f:
-                new = {}
-                for line in f.readlines():
-                    fields = line.split('\t')
-                    p = float(fields[6])
-                    rsID = fields[1]
-                    if rsID in unique:
-                        if p < float(unique[rsID][6]):
-                            unique[rsID] = fields
-                    elif rsID in new and p >= float(new[rsID][6]):
-                        continue
-                    else:
-                        new[rsID] = fields
-            if i > 0:
-              with gzip.open(output[i-1], 'wt') as deduped_snps:
-                for rsID in unique:
-                    deduped_snps.write('\t'.join(unique[rsID]))
-            unique = new
-        with gzip.open(output[-1], 'wt') as deduped_snps:
-            for rsID in unique:
-                deduped_snps.write('\t'.join(unique[rsID]))
-
-# columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
-rule cat_snps:
-    input:
-        lambda wildcards: expand("FastQTL/all_snps_{level}.{chunk}.txt.gz", level = wildcards.level, chunk=range(1,num_permutations),)
-    output:
-        "FastQTL/all_snps_{level}.all.txt.gz"
-    shell:
-        "zcat {input} | gzip -c > {output}"
 
 # filter out all eQTLs with p-values above the FDR threshold for that egene
-# I'm going to keep all fields here so I will need to select columns to create the LDSR input
 rule filter_eqtls:
     input:
          egenes = "FastQTL/sig_egenes_{level}_q{fdr}.bed.gz",
-         eqtls = "FastQTL/all_eqtls_{level}.{chunk}_q{fdr}.txt.gz"
+         eqtls = eqtls = lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
     output:
-        "FastQTL/sig_eqtls_{level}.{chunk}_q{fdr}.gz"
+        "FastQTL/sig_eqtls_{level}_q{fdr}.gz"
     run:
         import gzip
         # store p_val_nominal_threshold for all egenes
-        with gzip.open(input['egenes'], 'rt') as egene_file:
+        with gzip.open(input['egenes'], 'rt') as egene_fh:
             egenes = {}
-            for line in egene_file.readlines():
+            for line in egene_fh:
                 line = line.strip()
                 fields = line.split('\t')
                 egenes[fields[3]] = float(fields[21])
 
         # print all SNPs for egenes with p_val below threshold 
-        with gzip.open(output[0], 'wt') as out_file:
-            with gzip.open(input['eqtls'], 'rt') as eqtl_file:
-                for line in eqtl_file.readlines():
-                    fields = line.split('\t')
-                    if fields[0] in egenes and float(fields[6]) <= egenes[fields[0]]:
-                        out_file.write(line)
-
-rule gtex_map2bed:
-    input:
-        "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table.txt.gz"
-    output:
-        "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table_hg19.bed"
-    benchmark:
-        "benchmarks/gtex_to_bed_awk.txt"
-    shell:
-         "gunzip -c {input} | awk -v OFS=\"\t\" '{{print \"chr\" $1, $2-1, $2, $3, \".\", \"+\", $4, $5, $6, $7}}' > {output}"
-
-rule lift_over_map_bed:
-    input:
-        bed=rules.gtex_map2bed.output,
-        chain_file=config["reference"]["chain_file"],
-    output:
-        "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table.bed"
-    log:
-        "Logs/LiftoverBED/gtex_liftover.txt"
-    shell:
-        "(CrossMap.py bed {input.chain_file} {input.bed} {output}) 2> {log}"
-
-rule sort_fbseq_bed:
-    input:
-        rules.snp_positions_bed.output
-    output:
-        "Genotypes/Combined/snp_positions.bed_sorted.bed"
-    shell:
-        "sort -k1,1 -k2,2n {input} > {output}"
-
-rule sort_gtex_map_bed:
-    input:
-        rules.lift_over_map_bed.output
-    output:
-        "GTEx_Analysis_v7_eQTL/GTEx_Analysis_2016-01-15_v7_WholeGenomeSeq_635Ind_PASS_AB02_GQ20_HETX_MISS15_PLINKQC.lookup_table_sorted.bed"
-    shell:
-        "sort -k1,1 -k2,2n {input} > {output}"
-        
-rule overlapping_snps_fbseq:
-    input:
-        gtex = rules.sort_gtex_map_bed.output,
-        fb_seq = rules.sort_fbseq_bed.output
-    output:
-        "Genotypes/Combined/GTEx_overlapping_snps.bed"
-    shell:
-        "/share/apps/bedtools intersect -sorted -a {input.fb_seq} -b {input.gtex} > {output}"
-        
-rule overlapping_snps_gtex:
-    input:
-        gtex = rules.sort_gtex_map_bed.output,
-        fb_seq = rules.sort_fbseq_bed.output
-    output:
-        "GTEx_Analysis_v7_eQTL/FBSeq_overlapping_snps.bed"
-    shell:
-        "/share/apps/bedtools intersect -sorted -a {input.gtex} -b {input.fb_seq} > {output}"
-
-""" 5785546 SNPs tested for eQTLs
-    5678630 SNPs with overlapping positions to GTEx SNPs
-    5666564 SNPs with overlapping positions and overlapping ref/alt genotypes
-"""        
-rule combine_overlaps:
-    input:
-        gtex = rules.overlapping_snps_gtex.output,
-        fb_seq = rules.overlapping_snps_fbseq.output
-    output:
-        "Genotypes/Combined/GTEx_overlapping_snps_filtered.bed"
-    shell:
-        "paste {input.fb_seq} {input.gtex} | awk '{{if ($7 == $15 && $8 == $16) print $0}}' > {output}"
-
-rule filter_gtex:
-    input:
-        sig_pairs = "GTEx_Analysis_v7_eQTL/{tissue}.v7.signif_variant_gene_pairs.txt.gz",
-        overlapping_snps = rules.combine_overlaps.output
-    output:
-        "GTEx_Analysis_v7_eQTL/{tissue}_filtered.txt"
-    benchmark:
-        "benchmarks/filter_{tissue}.txt"
-    run:
-        import gzip
-        with open(input['overlapping_snps'][0], 'r') as combined_snp_fh:
-            combined_snps = {}
-            for line in combined_snp_fh:
-                fields = line.split('\t')
-                combined_snps[fields[11]] = fields[3]
-                
-        with open(output[0], 'w') as bed_file:
-            with gzip.open(input['sig_pairs'], 'rt') as f:
-                bed_file.write('rsID\t' + f.readline())
-                for line in f:
-                    fields = line.split('\t')
-                    if fields[0] in combined_snps:
-                        bed_file.write(combined_snps[fields[0]] + '\t' + line)
-
-rule filter_gtex_egenes:
-    input:
-        rules.filter_gtex.output
-    output:
-        "GTEx_Analysis_v7_eQTL/{tissue}_egenes_filtered.txt"
-    shell:
-        "Rscript -e 'library(readr); library(dplyr); read_tsv(\"{input}\") %>% arrange(pval_nominal) %>% group_by(gene_id) %>% slice(1) %>% write_tsv(\"{output}\")'"
-
-rule gtex_overlaps:
-    input:
-        gtex = rules.filter_gtex_egenes.output,
-        eqtls = rules.cat_fast_qtl.output
-    output:
-        "FastQTL/{tissue}_overlaps_{level}.txt"
-    run:
-            import gzip
-            with open(input['gtex'][0], 'r') as gtex_fh:
-                gtex_eqtls = {}
-                for line in gtex_fh: # this will add the header to the dic, but that won't get in the way
-                    fields = line.split('\t')
-                    gene_id = fields[2].split('.')[0]
-                    rsID = fields[0]
-                    gtex_eqtls[gene_id] = rsID
-            with open(output[0], 'w') as overlaps_fh:
-                print(input['eqtls'][0])
-                with gzip.open(input['eqtls'][0], 'rt') as eqtl_fh:
+        with gzip.open(output[0], 'wt') as out_fh:
+            for eqtl_file in input['eqtls']:
+                with gzip.open(eqtl_file, 'rt') as eqtl_fh:
                     for line in eqtl_fh:
                         fields = line.split('\t')
-                        gene_id = fields[0]
-                        rsID = fields[1]
-                        if gene_id in gtex_eqtls and gtex_eqtls[gene_id] == rsID:
-                            overlaps_fh.write(line)
+                        if fields[0] in egenes and float(fields[6]) <= egenes[fields[0]]:
+                            out_file.write(line)
+                        
+# filter out eQTLs from SNPs that were not included in GTEx
+rule filter_eqtls_gtex:
+    input:
+         gtex_snps = rules.combine_overlaps.output,
+         eqtls = "FastQTL/sig_eqtls_{level}_q{fdr}.gz"
+    output:
+        "FastQTL/sig_eqtls_{level}_q{fdr}_gtex.gz"
+    run:
+        import gzip
+        # store GTEx snp_ids
+        with gzip.open(input['gtex_snps'], 'rt') as gtex_fh:
+            gtex_snps = {}
+            for line in gtex_fh:
+                line = line.strip()
+                fields = line.split('\t')
+                gtex_snps[fields[3]] = fields[12] # need to double-check these numbers
+                
+        with gzip.open(output, 'wt') as out_fh:
+            with gzip.open(input['eqtls'], 'rt') as eqtl_fh:
+                for line in eqtl_fh:
+                    fields = line.split('\t')
+                    SNP = fields[1]
+                    try:
+                        gtex_id = gtex_snps[SNP]
+                    except IndexError:
+                        continue
+                    if rsID in unique and geneID in unique[rsID]:
+                        continue
+                    out_fh.write(line + '\t' + gtex_id)
