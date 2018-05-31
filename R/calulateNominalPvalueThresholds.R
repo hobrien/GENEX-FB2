@@ -73,10 +73,9 @@ cat("largest p-value below FDR: ", lb, "\n")
 cat("  * min p-value threshold @ FDR ", opt$options$fdr, ": ", pthreshold, "\n", sep="")
 D[, 'pval_nominal_threshold'] <- signif(qbeta(pthreshold, D[, 'beta_shape1'], D[, 'beta_shape2'], ncp=0, lower.tail=TRUE, log.p=FALSE), 6)
 
-snp_pos <- read_tsv(opt$options$snps, col_names=FALSE)
+snp_pos <- read_tsv(opt$options$snps, col_names=c('chr', 'start', 'end', 'variant_id', 'score', 'strand', 'A1', 'A2'))
 
-snp_pos <- mutate(snp_pos, chr=paste0('chr', X1), start = X2-1) %>%
-  select(variant_id=X3, chr, start, end=X2)
+snp_pos <- snp_pos %>% select(variant_id, chr, start, end)
 D <- left_join(D, snp_pos) %>%
   select(chr, start, end, everything())
 
