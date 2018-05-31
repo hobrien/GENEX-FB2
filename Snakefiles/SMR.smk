@@ -20,12 +20,35 @@ else:
     fdr_levels = ['100', '10', '05', '01', '001', '0001']
     expression_levels = ['gene', 'transcript']
 
+"""
+rules:
+- prepare eQTL data for SMR:
+    - prepare_smr: add allele info and gene position info to eQTL results
+    - cat_eqtls_tr: combine formatted transcript-level eQTL data by chromosome
+    - cat_eqtls_gene: combine formatted gene-level eQTL data by chromosome
+    - make_besd: convert eQTL data to SMR input format
+    
+- prepare GWAS summary stats:
+    - plink_freqx: extract allele frequency info from 1000 genomes project using plink
+    - cat_freq: combine allele frequency from each chromosome
+    - format_gwas: add allele freq to GWAS sumstats; transform betas
+- SMR:
+    - smr: run SMR on each chromosome for each GWAS
+    - cat_smr: combine results from all chromosomes
+    - genloc_smr: modify info about gene positions to format needed by SMR
+    - plot_smr: create data to make effect size and locus plots for each SMR hit
+        - info about SMR hits was added to smr.yaml after running previous steps
+        - creating rules that depend on the results of the previous rules is challenging
+        with Snakemake. My understanding is this is an area where Nextflow might be better
+"""
 
 rule all:
     input: 
        expand("SMR/mysmr_{level}_{gwas}_all.smr.gz", level = expression_levels, gwas=gwas_list),
        expand("SMR/plot/{gwas}_{level}.{gene_id}.txt", gwas=['clozuk'], level=['gene'], gene_id=gene_ids),
 
+
+################################ prepare eQTL data for SMR ###############################
 rule prepare_smr:
     input:
         "FastQTL/all_eqtls_{level}.{chunk}_q05.txt.gz",
@@ -64,6 +87,8 @@ rule make_besd:
     shell:
         "smr --qfile {input} --make-besd --out {params}"
 
+
+############################### prepare GWAS summary stats ###############################
 rule plink_freqx:
     input:
         "LDSR/Reference/1000G_plinkfiles/1000G.mac5eur.{chr_num}.bed"
@@ -170,6 +195,7 @@ rule format_gwas:
                                     continue
                             output_fh.write('\t'.join(SNP, A1, A2, freq, b, se, p, n) + '\n')
 
+########################################## SMR ##########################################
 rule smr:
     input:
         gwas = rules.format_gwas.output,
