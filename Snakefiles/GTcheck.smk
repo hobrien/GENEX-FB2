@@ -4,6 +4,24 @@ configfile: "config.yaml"
 files=get_sequences(config['seqfile'])
 files = {k: v for k, v in files.items() if k not in ['17046','16385','17048','16024','16115','11449','16972']}
 
+# to make DAG: snakemake -np --dag | dot -Tsvg > dag.svg
+dag = 0  # set to 1 to produce DAG image without tons of duplicates 
+if dag:
+    k,v=files.popitem(); files = {k:v}
+else:
+   files = {k: v for k, v in files.items() if k not in ['17046','16385','17048','16024','16115','11449','16972']}
+
+"""
+rules:
+- hisat: map reads to reference
+- sort_bam: sort mapping file
+- samtools_index: index mapping file
+- call_snps: run samtools mpileup and bcftools call to call SNPs from mapping file
+- index_vcf: index SNP data 
+- gt_check: run bcftools GTcheck
+- summarise_gt_check: plot Discordance for all samples
+"""
+
 rule all:
     input:
         "GTcheck/summary.png"
