@@ -1,30 +1,36 @@
 __default__:
     num_cores: 1
     maxvmem: 4G
-summarise_overlaps:
+distinct_snps:
     num_cores: 1
-    maxvmem: 6G
+    maxvmem: 8G
 fast_qtl_permutations:
     num_cores: 1
     maxvmem: 6G
 fast_qtl:
     num_cores: 1
     maxvmem: 6G
-sort_bam:
-    num_cores: 8
-    maxvmem: 8G
+format_gwas:
+    num_cores: 1
+    maxvmem: 10G
 hisat:
     num_cores: 8
     maxvmem: 8G
 make_besd:
     num_cores: 1
-    maxvmem: 40G
-cat_smr:
-    num_cores: 1
-    maxvmem: 20G
-prepare_smr:
-    num_cores: 1
-    maxvmem: 10G
+    maxvmem: 16G
 peer:
     num_cores: 1
     maxvmem: 30G
+peer_nc:
+    num_cores: 1
+    maxvmem: 30G
+plot_smr:
+    num_cores: 1
+    maxvmem: 8G
+smr:
+    num_cores: 10
+    maxvmem: 4G
+sort_bam:
+    num_cores: 8
+    maxvmem: 8G
