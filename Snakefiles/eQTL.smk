@@ -84,18 +84,18 @@ FastQTL/sig_snps_{level}_q{fdr}.gz: lowest p-value for each SNP among sig eGenes
     - columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
 FastQTL/sig_eqtls_{level}_q{fdr}.gz: all eQTL below p-val threshold at different FDR values
     - columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
-FastQTL/sig_eqtls_{level}_q{fdr}_gtex.gz: all eQTL below p-val threshold that were tested by GTEx (with GTEx SNP_id)
+FastQTL_GTEx/sig_eqtls_{level}_q{fdr}_gtex.gz: all eQTL below p-val threshold that were tested by GTEx (with GTEx SNP_id)
 """
 
 rule all:
     input:
        "Peer/factors_nc.txt",
        "Results/snp_summary.txt",
-       expand(sig_egenes_{level}_q{fdr}.bed.gz, level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['100', '10', '05', '01', '001', '0001']),
+       expand("FastQTL/sig_egenes_{level}_q{fdr}.bed.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['100', '10', '05', '01', '001', '0001']),
        expand("FastQTL/all_eqtls_{level}.all_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['100', '10', '05', '01', '001', '0001']),
-       expand("sig_snps_{level}_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['100', '10', '05', '01', '001', '0001']),
+       expand("FastQTL/sig_snps_{level}_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['100', '10', '05', '01', '001', '0001']),
        expand("FastQTL/sig_eqtls_{level}_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['10', '05', '01', '001', '0001']),
-       expand("FastQTL/sig_eqtls_{level}_q{fdr}_gtex.gz", level = ['gene', 'transcript'], fdr=['10', '05', '01', '001', '0001'])
+       expand("FastQTL_GTEx/sig_eqtls_{level}_q{fdr}_gtex.gz", level = ['gene', 'transcript'], fdr=['10', '05', '01', '001', '0001'])
 
 
 ################################ prepare expression matrix ################################
@@ -420,7 +420,7 @@ rule lift_over_map_bed:
     log:
         "Logs/LiftoverBED/gtex_liftover.txt"
     shell:
-"(CrossMap.py bed {input.chain_file} {input.bed} {output}) 2> {log}"
+        "(CrossMap.py bed {input.chain_file} {input.bed} {output}) 2> {log}"
 
 rule sort_gtex_map_bed:
     input:
@@ -594,7 +594,7 @@ rule fast_qtl_permutations:
 
 rule q_values:
     input:
-        lambda wildcards: eqtls = expand("FastQTL/permutations.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
+        eqtls = lambda wildcards: expand("FastQTL/permutations.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
         snp_pos = rules.snp_positions.output
     output:
         "FastQTL/sig_egenes_{level}_q{fdr}.bed.gz"
@@ -610,7 +610,7 @@ rule q_values:
 rule all_eqtls_from_sig_egenes:
     input:
         eqtls = lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
-        egenes = "FastQTL/sig_egenes_{level}_q{fdr}.bed.gz"
+        egenes = rules.q_values.output
     output:
         ["FastQTL/all_eqtls_{level}." + str(x+1) + "_q{fdr}.txt.gz" for x in range(100)]
     run:
@@ -664,8 +664,8 @@ rule distinct_snps:
 # filter out all eQTLs with p-values above the FDR threshold for that egene
 rule filter_eqtls:
     input:
-         egenes = "FastQTL/sig_egenes_{level}_q{fdr}.bed.gz",
-         eqtls = eqtls = lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
+         egenes = rules.q_values.output,
+         eqtls = lambda wildcards: expand("FastQTL/fastQTL.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations))
     output:
         "FastQTL/sig_eqtls_{level}_q{fdr}.gz"
     run:
@@ -691,9 +691,9 @@ rule filter_eqtls:
 rule filter_eqtls_gtex:
     input:
          gtex_snps = rules.combine_overlaps.output,
-         eqtls = "FastQTL/sig_eqtls_{level}_q{fdr}.gz"
+         eqtls = rules.filter_eqtls.output
     output:
-        "FastQTL/sig_eqtls_{level}_q{fdr}_gtex.gz"
+        "FastQTL_GTEx/sig_eqtls_{level}_q{fdr}_gtex.gz"
     run:
         import gzip
         # store GTEx snp_ids
