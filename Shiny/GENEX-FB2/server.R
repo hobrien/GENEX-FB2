@@ -18,13 +18,7 @@ source("FormatGGplot.R")
 library(DT)
 library(ggbeeswarm)
 
-# setwd("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Shiny/GENEX-FB2/")
-# input<-list(TopCisTableTr_rows_selected=6, TransTableTr_rows_selected=1, p_type='qvalue', pvalue=.05)
 ################################## Define functions ##################################
-
-# PlotEQTL(1, counts, top_cis[top_cis[, 'qvalue'] < .1, ], target, snp_header)
-#cis <- dplyr::rename(top_trans, topSNP=snps, qvalue=FDR)[top_trans[, 'qvalue'] < .1, ]
-# row_num <- 1
 PlotEQTL<-function(row_num, counts, cis, target, snp_header) {
   qtl_stats <- cis[row_num,]
   geneID <- qtl_stats$Id
@@ -50,15 +44,12 @@ PlotEQTL<-function(row_num, counts, cis, target, snp_header) {
                        levels=c(paste0(UQ(ref), UQ(ref)), paste0(UQ(ref), UQ(alt)), paste0(UQ(alt), UQ(alt)) )))
   pval <- qtl_stats$nominal_p[1]
   qval <- qtl_stats$qvalue[1]
-  #mean <- data %>% group_by(genotype) %>% summarise(mean = mean(value))
   title<-paste0(geneID, ' x ', snp)
   plot<-  ggplot(data, aes(y=value, x=DS)) + 
-    #geom_errorbar(aes(ymin=mean, ymax=mean), colour='black', size=1, width=.5, data=mean) +
     geom_smooth(method='lm', colour='black') +
     geom_quasirandom(aes(colour=geno), width=0.05, alpha=.5) + 
     ylab("Normalised Counts") +
     xlab('Dosage') +
-    #scale_x_discrete(breaks=c(0,1,2), labels=c('Ref', 'Het', 'Alt')) +
     side_theme() +
     scale_colour_brewer(type = "qual", palette = 6) +
     ggtitle(title) +
