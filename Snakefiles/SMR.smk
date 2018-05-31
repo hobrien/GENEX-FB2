@@ -1,12 +1,30 @@
 import yaml
 import os
-configfile: "config.yaml"
+
 SMR=yaml.load(open('smr.yaml', 'r'))
+
+# to make DAG: snakemake -np --dag | dot -Tsvg > dag.svg
+dag = 0  # set to 1 to produce DAG image without tons of duplicates 
+if dag:
+    gwas_list = ['clozuk']
+    gene_ids = ['ENSG00000150967']
+    chr_num = 2
+    num_permutations = 2
+    fdr_levels = ['05']
+    expression_levels = ['gene']
+else:
+    gwas_list = SMR['GWAS']
+    gene_ids = SMR['gene']['clozuk']
+    chr_num = 23
+    num_permutations = 101
+    fdr_levels = ['100', '10', '05', '01', '001', '0001']
+    expression_levels = ['gene', 'transcript']
+
 
 rule all:
     input: 
-       expand("SMR/mysmr_{level}_{gwas}_all.smr.gz", level = ['gene', 'transcript'], gwas=SMR['GWAS']),
-       expand("SMR/plot/{gwas}_{level}.{gene_id}.txt", gwas=['clozuk'], level=['gene'], gene_id=SMR['gene']['clozuk']),
+       expand("SMR/mysmr_{level}_{gwas}_all.smr.gz", level = expression_levels, gwas=gwas_list),
+       expand("SMR/plot/{gwas}_{level}.{gene_id}.txt", gwas=['clozuk'], level=['gene'], gene_id=gene_ids),
 
 rule prepare_smr:
     input:
@@ -20,18 +38,18 @@ rule prepare_smr:
 
 rule cat_eqtls_tr:
     input:
-        expand("BESD/myquery.transcript.{chunk}.txt.gz", chunk=range(1,101))
+        expand("BESD/myquery.transcript.{chunk}.txt.gz", chunk=range(1,num_permutations))
     output:
-        ["BESD/myquery.transcript.chr" + str(x+1) + ".txt" for x in range(23)]
+        ["BESD/myquery.transcript.chr" + str(x+1) + ".txt" for x in range(chr_num)]
     shell:
         "echo -e 'SNP\tChr\tBP\tA1\tA2\tFreq\tProbe\tProbe_Chr\tProbe_bp\tGene\tOrientation\tb\tse\tp' | tee {output}; "
         "zcat {input} | awk '{{print>>\"BESD/myquery.transcript.chr\"$2\".txt\"}}'"
 
 rule cat_eqtls_gene:
     input:
-        expand("BESD/myquery.gene.{chunk}.txt.gz", chunk=range(1,101))
+        expand("BESD/myquery.gene.{chunk}.txt.gz", chunk=range(1,num_permutations))
     output:
-        ["BESD/myquery.gene.chr" + str(x+1) + ".txt" for x in range(23)] 
+        ["BESD/myquery.gene.chr" + str(x+1) + ".txt" for x in range(chr_num)] 
     shell:
         "echo -e 'SNP\tChr\tBP\tA1\tA2\tFreq\tProbe\tProbe_Chr\tProbe_bp\tGene\tOrientation\tb\tse\tp' | tee {output}; "
         "zcat {input} | awk '{{print>>\"BESD/myquery.gene.chr\"$2\".txt\"}}'"
@@ -58,7 +76,7 @@ rule plink_freqx:
         
 rule cat_freq:
     input:
-        expand("LDSR/Reference/1000G_plinkfiles/1000G.mac5eur.{chr_num}.frqx", chr_num=range(1,23))
+        expand("LDSR/Reference/1000G_plinkfiles/1000G.mac5eur.{chr_num}.frqx", chr_num=range(1,chr_num))
     output:
         "LDSR/Reference/1000G_plinkfiles/1000G_AF.txt"
     shell:
@@ -170,7 +188,7 @@ rule smr:
 
 rule cat_smr:
     input:
-        lambda wildcards: expand("SMR/mysmr_{level}_{gwas}.chr{chr}.smr", level = wildcards.level, gwas=wildcards.gwas, chr=range(1,23))
+        lambda wildcards: expand("SMR/mysmr_{level}_{gwas}.chr{chr}.smr", level = wildcards.level, gwas=wildcards.gwas, chr=range(1,chr_num))
     output:
         "SMR/mysmr_{level}_{gwas}_all.smr.gz"
     shell:
