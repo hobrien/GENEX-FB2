@@ -10,10 +10,13 @@ dag = 0  # set to 1 to produce DAG image without tons of duplicates
 if dag:
     chr_num = 2
     num_permutations = 2
+    fdr_levels = ['05']
+    expression_levels = ['gene']
 else:
    chr_num = 23
    num_permutations = 101
-
+   fdr_levels = ['100', '10', '05', '01', '001', '0001']
+   expression_levels = ['gene', 'transcript']
 """
 rules:
 - prepare expression matrix:
@@ -45,7 +48,6 @@ rules:
     tabix_vcf: index final vcf file
 
 - prepare SNP info:
-    snp_positions: extract genomic coordinates for each SNP (to be associated with eQTLs in q_values rule)
     snp_positions_bed: convert snp positions to BED format for comparison with GTEx
     gtex_map2bed: convert GTEx SNP map to bed format for liftover
     lift_over_map_bed: lift over to hg38 coordinates
@@ -91,11 +93,11 @@ rule all:
     input:
        "Peer/factors_nc.txt",
        "Results/snp_summary.txt",
-       expand("FastQTL/sig_egenes_{level}_q{fdr}.bed.gz", level = ['gene', 'transcript'], chunk=range(1,num_permutations), fdr=['100', '10', '05', '01', '001', '0001']),
-       expand("FastQTL/all_eqtls_{level}.all_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['100', '10', '05', '01', '001', '0001']),
-       expand("FastQTL/sig_snps_{level}_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['100', '10', '05', '01', '001', '0001']),
-       expand("FastQTL/sig_eqtls_{level}_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['10', '05', '01', '001', '0001']),
-       expand("FastQTL_GTEx/sig_eqtls_{level}_q{fdr}_gtex.gz", level = ['gene', 'transcript'], fdr=['10', '05', '01', '001', '0001'])
+       expand("FastQTL/sig_egenes_{level}_q{fdr}.bed.gz", level = expression_levels, chunk=range(1,num_permutations), fdr=fdr_levels),
+       expand("FastQTL/all_eqtls_{level}.all_q{fdr}.gz", level = expression_levels, fdr=fdr_levels),
+       expand("FastQTL/sig_snps_{level}_q{fdr}.gz", level = expression_levels, fdr=fdr_levels),
+       expand("FastQTL/sig_eqtls_{level}_q{fdr}.gz", level = expression_levels, fdr=fdr_levels),
+       expand("FastQTL_GTEx/sig_eqtls_{level}_q{fdr}_gtex.gz", level = ['gene'], fdr=list(filter(lambda x: x != '100', fdr_levels)))
 
 
 ################################ prepare expression matrix ################################
@@ -325,7 +327,7 @@ rule filter_dup:
 
 rule combine_chromosomes:
     input:
-        expand("Genotypes/FilterDup/chr{chr_num}.filter_dup.bcf", chr_num=range(1,chr_num)) # change this to range(1,23) to run on all samples
+        expand("Genotypes/FilterDup/chr{chr_num}.filter_dup.bcf", chr_num=range(1,chr_num)) 
     output:
         "Genotypes/Combined/combined.vcf.gz"
     log:
@@ -385,14 +387,6 @@ rule tabix_vcf:
 
 
 ################################ prepare SNP info ################################
-rule snp_positions:
-    input:
-        rules.filter_tags.output
-    output:
-        "Genotypes/Combined/snp_positions.txt"
-    shell:
-        "bcftools view -H {input} |cut -f 1,2,3,4,5 > {output}"
-
 rule snp_positions_bed:
     input:
         rules.filter_tags.output
@@ -595,7 +589,7 @@ rule fast_qtl_permutations:
 rule q_values:
     input:
         eqtls = lambda wildcards: expand("FastQTL/permutations.{level}.{chunk}.txt.gz", level=wildcards.level, chunk=range(1,num_permutations)),
-        snp_pos = rules.snp_positions.output
+        snp_pos = rules.snp_positions_bed.output
     output:
         "FastQTL/sig_egenes_{level}_q{fdr}.bed.gz"
     params:
@@ -644,7 +638,7 @@ rule all_eqtls_from_sig_egenes:
 # combine chunks for all eQTLs from sig eGenes 
 rule cat_all_eqtls:
     input:
-        lambda wildcards: expand("FastQTL/all_eqtls_{level}.{chunk}_q{fdr}.txt.gz", level = wildcards.level, fdr=wildcards.fdr, chunk=range(1,101))
+        lambda wildcards: expand("FastQTL/all_eqtls_{level}.{chunk}_q{fdr}.txt.gz", level = wildcards.level, fdr=wildcards.fdr, chunk=range(1,num_permutations))
     output:
         "FastQTL/all_eqtls_{level}.all_q{fdr}.gz"
     shell:
