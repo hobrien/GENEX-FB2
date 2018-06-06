@@ -22,7 +22,9 @@ option_list <- list(
   make_option(c("-f", "--factors"), type="character", default="../examples/brem_data/factors.txt", 
               help="Outfile for PEER factors"),
   make_option(c("-e", "--exclude"), type="character", default='', 
-              help="IDs of samples to exclude")
+              help="IDs of samples to exclude"),
+  make_option(c("-i", "--image"), type="character", default=NULL, 
+              help="R image file")
 )
 opt_parser <- OptionParser(option_list=option_list)
 opt <- parse_args(opt_parser, positional_arguments=FALSE)
@@ -46,7 +48,7 @@ if (length(exclude) > 0) {
 if (!is.null(opt$batch)) {
   print("reading covariates")
   covariates <- read.table(opt$batch, header=TRUE, stringsAsFactors = TRUE)
-  colnames(covariates)[1]<-"ID"
+  covariates <- covariates %>% dplyr::select(ID=Sample, Sex, PCW, RIN, ReadLength) %>% as.data.frame()
   covariates$ID <- as.character(covariates$ID)
   covariates <- covariates[match(colnames(pheno[,-1]), covariates$ID),]
   covariates
@@ -78,11 +80,7 @@ if (!is.null(opt$batch) | !is.null(opt$pca)) {
 
 print("updating model")
 PEER_update(model)
-
-save.image(file="PEER.RData")
-PEER_getResiduals(model) %>% as_tibble() %>% write_tsv("residuals_temp.txt")
-PEER_getX(model) %>% as_tibble() %>% write_tsv("factors_temp.txt")
-PEER_getAlpha(model) %>% as_tibble() %>% write_tsv("alpha_temp.txt")
+save.image(file=opt$image)
 
 residuals <- PEER_getResiduals(model) %>% t() %>% as_tibble()
 colnames(residuals) <- colnames(pheno[,-1])

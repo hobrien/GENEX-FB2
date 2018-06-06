@@ -374,7 +374,7 @@ rule filter_tags:
         hwe=.0001,
         r2=.8
     shell:
-        "bcftools +fill-tags {input} -Ou | bcftools view -e'MAF<{params.maf} || "
+        "bcftools +fill-tags {input} -Ou | bcftools view -e 'MAF<{params.maf} || "
         "HWE<{params.hwe} || R2<{params.r2}' -Ou - | bcftools sort -Oz -o {output} - "
 
 rule tabix_vcf:
@@ -495,15 +495,14 @@ rule peer_nc:
     params:
         residuals = "Peer/residuals_nc.txt",
         alpha = "Peer/alpha_nc.txt",
-        num_peer = 10
+        num_peer = 10,
+        image = "Peer/peer_nc.R"
     log:
         "Logs/PEER/peer_nc.txt"
-    conda:
-        "env/peer.yaml"
     shell:
-        "(Rscript /c8000xd3/rnaseq-heath/GENEX-FB2/R/PEER.R  "
+        "(Rscript R/PEER.R -i {params.image} "
         "-n {params.num_peer} -c {input.counts} "
-        "-r {params.residuals} -f {output}  -a {params.alpha}) > {log}"
+        "-r {params.residuals} -f {output} -a {params.alpha}) > {log}"
 
 rule peer:
     input:
@@ -515,13 +514,12 @@ rule peer:
         sample_info=config["sample_info"],
         residuals = "Peer/residuals.txt",
         alpha = "Peer/alpha.txt",
-        num_peer = 10
+        num_peer = 10,
+        image = "Peer/peer.R"
     log:
         "Logs/PEER/peer.txt"
-    conda:
-        "env/peer.yaml"
     shell:
-        "(Rscript /c8000xd3/rnaseq-heath/GENEX-FB2/R/PEER.R -p {input.pca} "
+        "(Rscript R/PEER.R -p {input.pca} -i {params.image} "
         "-n {params.num_peer} -c {input.counts} -b {params.sample_info} "
         "-f {output} -r {params.residuals} -a {params.alpha}) > {log}"
 
