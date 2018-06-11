@@ -29,7 +29,7 @@ that can be executed using the supplied bash scripts:
     - [vcf-sort](https://github.com/vcftools/vcftools/blob/master/src/perl/vcf-sort)
 
 - Genome References:
-    - [variant lookup table](ftp://ftp.ncbi.nih.gov/snp/organisms/human_9606/VCF) in VCF format (dbSNP v149, genome build GRCh37.p13)
+    - [variant lookup table](http://ftp.ncbi.nih.gov/snp/organisms/human_9606/VCF) in VCF format (dbSNP v149, genome build GRCh37.p13)
     - [hg19 to GRCh38 chain file](http://hgdownload.soe.ucsc.edu/gbdb/hg19/liftOver/hg19ToHg38.over.chain.gz)
     - genome sequence ([GRCh38.p4](https://www.ncbi.nlm.nih.gov/assembly/GCF_000001405.30) with [Decoy sequences](https://www.ncbi.nlm.nih.gov/assembly/GCA_000786075.2))
     - splicesites (derived from [Gencode version 23 (GRCh38.p3)](https://www.gencodegenes.org/releases/23.html))
