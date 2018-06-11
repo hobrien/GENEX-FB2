@@ -374,7 +374,7 @@ rule filter_tags:
         hwe=.0001,
         r2=.8
     shell:
-        "bcftools +fill-tags {input} -Ou | bcftools view -e 'MAF<{params.maf} || "
+        "bcftools +fill-tags {input} -Ou | bcftools view -e'MAF<{params.maf} || "
         "HWE<{params.hwe} || R2<{params.r2}' -Ou - | bcftools sort -Oz -o {output} - "
 
 rule tabix_vcf:
