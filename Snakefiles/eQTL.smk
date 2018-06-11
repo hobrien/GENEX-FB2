@@ -75,18 +75,18 @@ rules:
     filter_eqtls_gtex: 
 
 outputs:
-FastQTL/sig_egenes_{level}_q{fdr}.bed.gz: qvalues for top SNP for each eGene at different FDR levels
+- FastQTL/sig_egenes_{level}_q{fdr}.bed.gz: qvalues for top SNP for each eGene at different FDR levels
     - FastQTL/sig_egenes_{level}_q100.bed.gz: qvalues for top SNP for all eGenes
     - columns: chr, snp_start, snp_end, gene_id, num_var, beta_shape1, beta_shape2, true_df, pval_true_df, variant_id, tss_distance, minor_allele_samples, minor_allele_count, maf, ref_factor, pval_nominal, slope, slope_se, pval_perm, pval_beta, qval, pval_nominal_threshold
-FastQTL/all_eqtls_{level}.all_q{fdr}.gz: all eQTL for all sig eGenes at different FDR levels
+- FastQTL/all_eqtls_{level}.all_q{fdr}.gz: all eQTL for all sig eGenes at different FDR levels
     - FastQTL/all_eqtls_{level}.all_q100.gz: all eQTL for all eGenes
     - columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
-FastQTL/sig_snps_{level}_q{fdr}.gz: lowest p-value for each SNP among sig eGenes at different FDR levels
+- FastQTL/sig_snps_{level}_q{fdr}.gz: lowest p-value for each SNP among sig eGenes at different FDR levels
     - FastQTL/sig_snps_{level}_q100.gz: lowest p-value for each SNP among all eGenes
     - columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
-FastQTL/sig_eqtls_{level}_q{fdr}.gz: all eQTL below p-val threshold at different FDR values
+- FastQTL/sig_eqtls_{level}_q{fdr}.gz: all eQTL below p-val threshold at different FDR values
     - columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
-FastQTL_GTEx/sig_eqtls_{level}_q{fdr}_gtex.gz: all eQTL below p-val threshold that were tested by GTEx (with GTEx SNP_id)
+- FastQTL_GTEx/sig_eqtls_{level}_q{fdr}_gtex.gz: all eQTL below p-val threshold that were tested by GTEx (with GTEx SNP_id)
 """
 
 rule all:
@@ -609,7 +609,7 @@ rule all_eqtls_from_sig_egenes:
         from collections import defaultdict
         import gzip
         # make set of sig eGenes
-        with gzip.open(input['egenes'], 'rt') as egene_fh:
+        with gzip.open(input['egenes'][0], 'rt') as egene_fh:
             egenes = set()
             for line in egene_fh:
                 line = line.strip()
@@ -652,7 +652,6 @@ rule distinct_snps:
     shell:
         "Rscript R/TopSNPs.R {input.eqtls} {input.snp_pos} {output}"
 
-
 # filter out all eQTLs with p-values above the FDR threshold for that egene
 rule filter_eqtls:
     input:
@@ -663,13 +662,16 @@ rule filter_eqtls:
     run:
         import gzip
         # store p_val_nominal_threshold for all egenes
-        with gzip.open(input['egenes'], 'rt') as egene_fh:
+        with gzip.open(input['egenes'][0], 'rt') as egene_fh:
             egenes = {}
             for line in egene_fh:
                 line = line.strip()
                 fields = line.split('\t')
-                egenes[fields[3]] = float(fields[21])
-
+                try:
+                    egenes[fields[3]] = float(fields[21])
+                except ValueError:
+                    egenes[fields[3]] = 1 # threshold set to 'NA' when qvalue is 1
+                    
         # print all SNPs for egenes with p_val below threshold 
         with gzip.open(output[0], 'wt') as out_fh:
             for eqtl_file in input['eqtls']:
@@ -677,7 +679,7 @@ rule filter_eqtls:
                     for line in eqtl_fh:
                         fields = line.split('\t')
                         if fields[0] in egenes and float(fields[6]) <= egenes[fields[0]]:
-                            out_file.write(line)
+                            out_fh.write(line)
                         
 # filter out eQTLs from SNPs that were not included in GTEx
 rule filter_eqtls_gtex:
@@ -689,14 +691,14 @@ rule filter_eqtls_gtex:
     run:
         import gzip
         # store GTEx snp_ids
-        with gzip.open(input['gtex_snps'], 'rt') as gtex_fh:
+        with gzip.open(input['gtex_snps'][0], 'rt') as gtex_fh:
             gtex_snps = {}
             for line in gtex_fh:
                 line = line.strip()
                 fields = line.split('\t')
                 gtex_snps[fields[3]] = fields[12] # need to double-check these numbers
                 
-        with gzip.open(output, 'wt') as out_fh:
+        with gzip.open(output[0], 'wt') as out_fh:
             with gzip.open(input['eqtls'], 'rt') as eqtl_fh:
                 for line in eqtl_fh:
                     fields = line.split('\t')
