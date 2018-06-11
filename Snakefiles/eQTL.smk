@@ -595,7 +595,7 @@ rule q_values:
     log:
         "Logs/FastQTL/q_values_{level}_q{fdr}.txt"
     shell:
-        "(Rscript R/calulateNominalPvalueThresholds.R {input.eqtls} {input.snp_pos} {params.fdr} {output} ) > {log}"
+        "(Rscript R/calulateNominalPvalueThresholds.R -s {input.snp_pos} -f {params.fdr} -o {output} {input.eqtls} ) > {log}"
 
 # filter out eQTLs from eGenes that are non-significant (also removes duplicate lines)
 # columns: gene_id, variant_id, tss_distance, ma_samples, ma_count, maf, pval_nominal, slope, slope_se
