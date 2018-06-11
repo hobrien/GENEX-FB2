@@ -7,8 +7,6 @@ library("optparse")
 option_list <- list (
   make_option(c("-o", "--out"), type="character", default=NULL, 
               help="Name of output file"),
-  make_option(c("-l", "--lambda"), type="numeric", default=NULL, 
-              help=""),
   make_option(c("-f", "--fdr"), type="numeric", default=0.05, 
               help=""),
   make_option(c("-s", "--snps"), type="character", default=NULL, 
@@ -20,12 +18,10 @@ option_list <- list (
 opt_parser <- OptionParser(option_list=option_list)
 opt <- parse_args(opt_parser, positional_arguments=TRUE)
 
-  
-opt$args
 
 fastqtl_results_list=vector("list", length(opt$args))
 for (i in seq_along(fastqtl_results_list)) {
-  cat("Processing FastQTL output (", opt$args[i], "), with FDR=", args$fdr, "\n", sep="")
+  cat("Processing FastQTL output (", opt$args[i], "), with FDR=", opt$options$fdr, "\n", sep="")
   
   # input files have no headers
   D <- read.table(opt$args[i], header=FALSE, stringsAsFactors=FALSE)
@@ -36,10 +32,10 @@ for (i in seq_along(fastqtl_results_list)) {
   } else {
     stop("FastQTL output in unrecognized format (mismatched number of columns).")
   }
-  fastqtl_results_list[i] <- D
+  fastqtl_results_list[[i]] <- D
 }
 
-D <- bind_rows(smr_result_list)
+D <- bind_rows(fastqtl_results_list)
 
 # remove duplicates (
 # keep eGene with lowest nominal p-value (only applies when top_snp not tested in one dup)
