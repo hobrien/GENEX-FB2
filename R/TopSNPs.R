@@ -22,3 +22,4 @@ snp_pos <- snp_pos %>% select(variant_id=X3, A1=X4, A2=X5)
 sig_snps <- left_join(sig_snps, snp_pos) %>%
   select(SNP=variant_id, A1, A2, freq=maf, b=slope, se=slope_se, p=pval_nominal)
 write_tsv(sig_snps, args$output)
+
