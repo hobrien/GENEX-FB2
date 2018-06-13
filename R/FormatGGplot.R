@@ -1,14 +1,15 @@
 library(RColorBrewer)
+
+# Generate the colors for the chart procedurally with RColorBrewer
+palette <- brewer.pal("Greys", n=9)
+color.background = palette[2]
+color.grid.major = palette[3]
+color.axis.text = palette[6]
+color.axis.title = palette[7]
+color.title = palette[9]
+
 fte_theme <- function() {
-    
-    # Generate the colors for the chart procedurally with RColorBrewer
-    palette <- brewer.pal("Greys", n=9)
-    color.background = palette[2]
-    color.grid.major = palette[3]
-    color.axis.text = palette[6]
-    color.axis.title = palette[7]
-    color.title = palette[9]
-    
+
     # Begin construction of chart
     theme_bw(base_size=9) +
         
@@ -27,7 +28,7 @@ fte_theme <- function() {
         theme(legend.background = element_rect(fill=color.background)) +
         theme(legend.key = element_rect(fill=color.background, colour=color.background)) +
         theme(legend.text = element_text(size=12,color=color.axis.title)) +
-        theme(legend.title = element_blank()) +
+        #theme(legend.title = element_blank()) +
         
         # Set title and axis labels, and format these and tick marks
         theme(plot.title=element_text(color=color.title, size=20, vjust=1.25)) +
@@ -55,10 +56,12 @@ figure_theme <- function() {
 
 main_theme <- function() {
   fte_theme() +
-  theme(axis.text.x=element_text(size=16)) +
-  theme(axis.text.y=element_text(size=16)) +
-  theme(axis.title.x=element_text(size=20, vjust=0)) +
-  theme(axis.title.y=element_text(size=20, vjust=1.25)) 
+  theme(axis.text.x=element_text(size=6)) +
+  theme(axis.text.y=element_text(size=6)) +
+  theme(legend.text=element_text(size=6)) +
+  theme(axis.title.x=element_text(size=10, vjust=0)) +
+  theme(axis.title.y=element_text(size=10, vjust=1.25)) +
+  theme(legend.title=element_text(size=10)) 
 }
 
 side_theme <- function() {

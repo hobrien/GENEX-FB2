@@ -8,7 +8,8 @@ rule all:
     input:
         "Genotypes/Raw/Merged/FB_all.het",
         "Genotypes/Raw/Merged/FB_all.imiss",
-        "Genotypes/Raw/Merged/FB_all.sexcheck"
+        "Genotypes/Raw/Merged/FB_all.sexcheck",
+        "Genotypes/Raw/PLINK_040517_1054/FB_new_excl_blank.bed"
         
 rule make_bed:
     input:
@@ -16,10 +17,10 @@ rule make_bed:
     output:
         "Genotypes/Raw/PLINK_040517_1054/FB_new.bed"
     params:
-        input = "Genotypes/Raw/PLINK_040517_1054/Nick_Bray_OmniExpress_230317",
+        input = "Genotypes/Raw/PLINK_040517_1054/Nick_Bray_OmniExpress_230317"
         output = "Genotypes/Raw/PLINK_040517_1054/FB_new"
     shell:
-        "plink --file {params.input} --make-bed --out {params.output}"
+        "plink --file {params.input} --make-bed --out {parmas.output}"
 
 rule exclude_blank:
     input: 

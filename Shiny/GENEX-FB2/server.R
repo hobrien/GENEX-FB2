@@ -77,7 +77,7 @@ add_links <-function(fitted) {
 filter_table <- function(fitted, p_type, p_val) {
   fitted <- filter(fitted, !is.na(UQ(as.name(p_type))) & UQ(as.name(p_type)) <= p_val ) 
   fitted <- mutate(fitted, nominal_p = as.numeric(format(nominal_p, digits=3)), qvalue = as.numeric(format(qvalue, digits=3))) %>%
-    dplyr::select(Id, SYMBOL, `Top SNP`=topSNP, Chr, `SNP Pos`=pos, `pvalue`=nominal_p, padj=qvalue, num_trans)
+    dplyr::select(Id, SYMBOL, `Top SNP`=topSNP, Chr, `SNP Pos`=pos, slope, `pvalue`=nominal_p, padj=qvalue, num_trans)
   fitted
 }
 
@@ -122,7 +122,7 @@ top_cis <- read_delim("./Data/egenes_gene_q05.bed.gz", "\t", escape_double = FAL
                                   "ref_factor", "nominal_p", "slope", "slope_se", "padj_direct", 
                                   "padj_beta", "qvalue", "nominal_p_threshold")) %>%
   left_join(dplyr::select(counts, Id, SYMBOL), by=c('geneID' = 'Id')) %>%
-  dplyr::select(-one_of(c('start', 'cisVariants', 'slope', 'Beta1', 'Beta2', 'nominal_p_threshold', 'nominal_p_threshold.1','padj_direct', 'padj_beta'))) %>%
+  dplyr::select(-one_of(c('start', 'cisVariants', 'Beta1', 'Beta2', 'nominal_p_threshold', 'nominal_p_threshold.1','padj_direct', 'padj_beta'))) %>%
   mutate(Chr=str_replace(Chr, 'chr', '')) %>%
   dplyr::rename(Id=geneID)
 
@@ -140,7 +140,7 @@ top_cis_tr <- read_delim("./Data/egenes_transcript_q05.bed.gz", "\t", escape_dou
                                   "padj_beta", "qvalue", "nominal_p_threshold")) %>%
   dplyr::rename(Id=geneID) %>%
   left_join(dplyr::select(counts_tr, Id, SYMBOL), by=c('Id')) %>%
-  dplyr::select(-one_of(c('geneID', 'start', 'cisVariants', 'slope', 'Beta1', 'Beta2', 'nominal_p_threshold', 'nominal_p_threshold.1','padj_direct', 'padj_beta'))) %>%
+  dplyr::select(-one_of(c('geneID', 'start', 'cisVariants', 'Beta1', 'Beta2', 'nominal_p_threshold', 'nominal_p_threshold.1','padj_direct', 'padj_beta'))) %>%
   mutate(Chr=str_replace(Chr, 'chr', '')) 
   
 # Trans eQTLs
