@@ -77,7 +77,8 @@ rule all:
        expand("MatrixEQTL/{proximity}_eqtl_{level}.txt", proximity = ['cis', 'trans'], level = ['gene', 'transcript']),
        expand("FastQTL/all_eqtls_{level}.all_q{fdr}.gz", level = ['gene', 'transcript'], fdr=['10', '05']),
        expand("FastQTL/{tissue}_overlaps_{level}.txt", tissue = config['gtex_samples'], level=['gene']),
-       expand("Genotypes/1KG/merged.chr{chr_num}.eigenvec", chr_num =[1])
+       expand("Genotypes/1KG/merged.chr{chr_num}.eigenvec", chr_num =[1]),
+       expand("Data/expression_{level}_eur.bed", level = ['gene', 'transcript'])
        
 rule vcf_stats:
     input:
@@ -174,7 +175,7 @@ rule index_vcf2:
 rule add_rsID:
     input:
         vcf="Genotypes/MergedImputations/chr{chr_num}.merged.bcf",
-        index="Genotypes/MergedImputations/chr{chr_num}.merged.bcf.csi",
+        index="Genotypes/MergedImputations/chr{chr_num}.merged.bcf.tbi",
         rsID=config["reference"]["rsID"]
     output:
         "Genotypes/Annotated/chr{chr_num}.annotated.vcf.gz" 
@@ -235,12 +236,12 @@ rule filter_chr_1kg:
 
 rule prune_1kg:
     input:
-        rules.filter_chr_1kg.output
+        expand("Genotypes/1KG/merged_filtered.chr{chr_num}.vcf.gz", chr_num =[1])
     output:
-        bfile = "Genotypes/1KG/merged.chr{chr_num}.bed",
-        included = "Genotypes/1KG/merged.chr{chr_num}.prune.in"
+        bfile = "Genotypes/1KG/merged.bed",
+        included = "Genotypes/1KG/merged.prune.in"
     params:
-        prefix = "Genotypes/1KG/merged.chr{chr_num}"
+        prefix = "Genotypes/1KG/merged"
     shell:
         "plink --vcf {input} --indep-pairwise 250 5 0.2 --make-bed --out {params.prefix}"
         
@@ -249,13 +250,13 @@ rule pca_1kg:
         bfile=rules.prune_1kg.output.bfile,
         included=rules.prune_1kg.output.included
     output:
-        "Genotypes/1KG/merged.chr{chr_num}.eigenvec",
+        "Genotypes/1KG/merged.eigenvec",
     params:
-        prefix = "Genotypes/1KG/merged.chr{chr_num}",
+        prefix = "Genotypes/1KG/merged",
         num_components = 3
     shell:
         "plink --bfile {params.prefix} --pca {params.num_components} --extract {input.included} --out {params.prefix}"
-        
+
 rule lift_over:
     input:
         vcf="Genotypes/Annotated/chr{chr_num}.annotated.vcf.gz", # CrossMap appears to require a vcf file, not bcf
@@ -385,6 +386,18 @@ rule filter_counts:
     shell:
         "Rscript R/MakeBED.R --counts {input.gene_counts} --genes {input.geneloc} "
         "--min {params.min} --num {params.num} --out {output} --exclude {params.excluded}"
+
+rule filter_eur:
+    input:
+        counts = rules.filter_counts.output,
+        pcs = rules.pca_1kg.output,
+        sample_info = config['sample_info'],
+        kgp_sample_info = config['kgp_sample_info']
+    output:
+        "Data/expression_{level}_eur.bed"
+    shell:
+        "Rscript R/FilterPCs.R -c {input.counts} -p {input.pcs} -s {input.sample_info} "
+        "-k {input.sample_info} -o {output}"
 
 rule bgzip_counts:
     input:
@@ -615,14 +628,13 @@ rule q_values:
         eqtls=rules.cat_permutations.output,
         snp_pos=rules.snp_positions.output
     output:
-        all_genes = "FastQTL/egenes_{level}_q{fdr}.bed.gz",
-        filtered_genes = "FastQTL/sig_egenes_{level}_q{fdr}.bed.gz"
+        "FastQTL/sig_egenes_{level}_q{fdr}.bed.gz"
     params:
         fdr = lambda wildcards: qvals[wildcards.fdr]
     log:
         "Logs/FastQTL/q_values_{level}_q{fdr}.txt"
     shell:
-        "(Rscript R/calulateNominalPvalueThresholds.R {input.eqtls} {input.snp_pos} {params.fdr} {output.all_genes} {output.filtered_genes} ) > {log}"
+        "(Rscript R/calulateNominalPvalueThresholds.R -s {input.snp_pos} -f {params.fdr} -o {output} {input.eqtls} ) > {log}"
 
 # filter out eQTLs from eGenes that are non-significant (also removes duplicate lines)
 rule dedup_fast_qtl:
