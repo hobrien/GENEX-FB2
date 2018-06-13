@@ -79,18 +79,6 @@ target <- read_delim("./Data/SampleInfo.txt", "\t", escape_double = FALSE, trim_
 snp_header <- system("bcftools view -h ./Data/combined_filtered.vcf.gz | tail -1", intern=TRUE) %>%
   str_split('\t')
 
-tx2gene <- read_tsv("~/BTSync/FetalRNAseq/Github/GENEX-FB2/Data/tx2gene.txt",
-                    trim_ws = TRUE)
-
-geneloc <- read_tsv("./Data/geneloc.txt", col_names=c('Chr', 'start', 'end', 'Id', 'strand'), 
-                    col_types = cols(Chr='c')) %>%
-  mutate(TSS=ifelse(strand=='+', start, end))
-
-transcriptloc <- read_tsv("./Data/transcriptloc.txt", col_names=c('Chr', 'start', 'end', 'Id', 'strand'), 
-                    col_types = cols(Chr='c')) %>%
-  mutate(TSS=ifelse(strand=='+', start, end))
-
-
 # Gene-level analysis
 counts <- read_delim("./Data/counts.txt", "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   dplyr::select(-Chr, -gene_type, -ChrType)
