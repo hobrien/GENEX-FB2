@@ -1,13 +1,23 @@
-library(tidyverse)
+library(readr)
+library(dplyr)
+library("optparse")
 
-# Oh yes, thought of a catchy (and hopefully memorable) name for the dataset: 
-# GENEX-FB (for GENe EXpression in the Fetal Brain). 
-# This dataset would be GENEX-FB1: Sex biases. 
-# The larger dataset for eQTL / TWAS analysis (I reckon we'll get up to 150) would be GENEX-FB2: 
-# Genotypic effects. (If we grew the sample, we'd call it FB3 etc). 
-# We could also use GENEX for the adult brain samples (E.g. GENEX-AC (adult caudate)!
+option_list <- list (
+  make_option(c("-o", "--out"), type="character", default=NULL, 
+              help="Name of output file"),
+  make_option(c("-l", "--lambda"), type="numeric", default=NULL, 
+              help=""),
+  make_option(c("-s", "--sample_info"), type="character", default=NULL, 
+              help=""),
+  make_option(c("-v", "--vcf"), type="character", default=NULL, 
+              help=""),
+  make_option(c("-l", "--lambda"), type="numeric", default=NULL, 
+              help="")
+)
 
-#setwd("~/BTSync/FetalRNAseq/Github/GENEX-FB2/R")
+opt_parser <- OptionParser(option_list=option_list)
+opt <- parse_args(opt_parser, positional_arguments=FALSE)
+
 gene_info <- read_tsv("../Data/genes.txt") %>%
   mutate(gene_id = sub("\\.[0-9]+", "", gene_id)) %>%
   dplyr::select(Id = gene_id, SYMBOL=gene_name, Chr=seqid)
@@ -39,6 +49,8 @@ genotypes <- read_delim("../MatrixEQTL/genotypes_formatted.txt", "\t", escape_do
 genotypes_filtered <- semi_join(genotypes, cis, by=c("id" = 'snps'))
 write_tsv(genotypes_filtered, "../Shiny/GENEX-FB2/Data/genotypes.txt")
 
-file.copy("../Data/SampleInfo.txt", "../Shiny/GENEX-FB2/Data/SampleInfo.txt", overwrite=TRUE)
+file.copy(opt$options$sample_info, "../Shiny/GENEX-FB2/Data/SampleInfo.txt", overwrite=TRUE)
+file.copy(opt$options$vcf, "../Shiny/GENEX-FB2/Data/combined_filtered.vcf.gz", overwrite=TRUE)
+
 file.copy("../Data/MalevsFemale.complete.txt", "../Shiny/GENEX-FB2/Data/counts.txt", overwrite=TRUE)
 file.copy("../Data/fitted.txt", "../Shiny/GENEX-FB2/Data/fitted.txt", overwrite=TRUE)
