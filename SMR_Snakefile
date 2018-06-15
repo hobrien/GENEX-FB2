@@ -5,7 +5,7 @@ SMR=yaml.load(open('smr.yaml', 'r'))
 
 rule all:
     input: 
-       expand("SMR/mysmr_{level}_{gwas}_all_q{fdr}.smr.gz", level = ['gene', 'transcript'], gwas=config['GWAS'], fdr=['10', '05']),
+       expand("SMR/mysmr_{level}_{gwas}_q{fdr}_all.smr.gz", level = ['gene', 'transcript'], gwas=config['GWAS'], fdr=['10', '05']),
        expand("SMR/plot/clozuk_{level}.{gene_id}.txt", level=['gene'], gene_id=SMR['gene']['clozuk']),
        expand("SMR/plot/clozuk_{level}.{gene_id}.txt", level=['transcript'], gene_id=SMR['transcript']['clozuk']),
        expand("SMR/plot/neuroticism_{level}.{gene_id}.txt", level=['gene'], gene_id=SMR['gene']['neuroticism']),

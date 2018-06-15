@@ -13,18 +13,36 @@ fast_qtl:
 sort_bam:
     num_cores: 8
     maxvmem: 8G
+distinct_snps:
+    num_cores: 1
+    maxvmem: 8G
 hisat:
     num_cores: 8
     maxvmem: 8G
+smr:
+    num_cores: 10
+    maxvmem: 4G
 make_besd:
     num_cores: 1
-    maxvmem: 40G
+    maxvmem: 16G
+add_af:
+    num_cores: 1
+    maxvmem: 12G
+dedup_fast_qtl:
+    num_cores: 1
+    maxvmem: 8G
+plot_smr:
+    num_cores: 1
+    maxvmem: 8G
 cat_smr:
     num_cores: 1
-    maxvmem: 20G
-prepare_smr:
+    maxvmem: 8G
+prepare_gwas:
     num_cores: 1
     maxvmem: 10G
+prepare_smr:
+    num_cores: 1
+    maxvmem: 4G
 peer:
     num_cores: 1
     maxvmem: 30G

@@ -11,7 +11,7 @@ p <- add_argument(p, "snpfile", help="")
 p <- add_argument(p, "fdr", type="numeric", help="")
 p <- add_argument(p, "outfile", help="")
 p <- add_argument(p, "filtered", help="")
-p <- add_argument(p, "lambda", type="numeric", help="", default=NULL)
+#p <- add_argument(p, "lambda", type="numeric", help="", default=NULL)
 args <- parse_args(p)
 
 cat("Processing FastQTL output (", args$fastqtlOutput, "), with FDR=", args$fdr, "\n", sep="")
@@ -38,12 +38,12 @@ cat("  * Number of genes tested: ", nrow(D), " (excluding ", sum(nanrows), " gen
 cat("  * Correlation between Beta-approximated and empirical p-values: ", round(cor(D[, 'pval_perm'], D[, 'pval_beta']), 4), "\n", sep="")
 
 # calculate q-values
-if (is.null(args$lambda) || is.na(args$lambda)) {
+#if (is.null(args$lambda) || is.na(args$lambda)) {
   Q <- qvalue(D[, 'pval_beta'])
-} else {
-  cat("  * Calculating q-values with lambda = ", args$lambda, "\n", sep="")
-  Q <- qvalue(D[, 'pval_beta'], lambda=args$lambda)
-}
+#} else {
+#  cat("  * Calculating q-values with lambda = ", args$lambda, "\n", sep="")
+#  Q <- qvalue(D[, 'pval_beta'], lambda=args$lambda)
+#}
 
 D$qval <- signif(Q$qvalues, 6)
 cat("  * Proportion of significant phenotypes (1-pi0): " , round((1 - Q$pi0), 2), "\n", sep="")
