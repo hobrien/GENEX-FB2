@@ -64,6 +64,17 @@ main_theme <- function() {
   theme(legend.title=element_text(size=10)) 
 }
 
+presentation_theme <- function() {
+  fte_theme() +
+    theme(axis.text.x=element_text(size=18)) +
+    theme(axis.text.y=element_text(size=18)) +
+    theme(legend.text=element_text(size=18)) +
+    theme(axis.title.x=element_text(size=24, vjust=0)) +
+    theme(axis.title.y=element_text(size=24, vjust=1.25)) +
+    theme(legend.title=element_text(size=24)) 
+}
+
+
 side_theme <- function() {
   fte_theme() +
   theme(plot.title=element_text(size=16)) +
