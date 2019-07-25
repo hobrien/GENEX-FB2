@@ -1,6 +1,9 @@
+# Folders containing imputed genotype data (vcf format). I used the Michigan Imputation Server for this
 runs:
     Imputation3: Genotypes/Imputation3
     Imputation4: Genotypes/Imputation4
+   
+# Human genome reference files. I downloaded these from Illumina iGenomes
 reference:
     chain_file: /c8000xd3/rnaseq-heath/Ref/Homo_sapiens/GRCh38/hg19ToHg38.over.chain
     genome: /c8000xd3/rnaseq-heath/Ref/Homo_sapiens/GRCh38/NCBI/GRCh38Alt/genome.fa
@@ -8,9 +11,16 @@ reference:
     gtf: /c8000xd3/rnaseq-heath/Ref/Homo_sapiens/GRCh38/NCBI/GRCh38Decoy/Annotation/Genes.gencode/genes.gtf
     splice_sites: /c8000xd3/rnaseq-heath/Ref/Homo_sapiens/GRCh38/NCBI/GRCh38Decoy/Annotation/Genes.gencode/splicesites.txt
     index: /c8000xd3/rnaseq-heath/Ref/Homo_sapiens/GRCh38/NCBI/GRCh38Decoy/Sequence/WholeGenomeFasta/genome
+
+# Count data from mapping RNAseq data to reference genome, I got this from the workflow at https://github.com/hobrien/GENEX-FB1
 count_data: 
     gene: Data/counts_vst.txt
     transcript: Data/counts_tr_vst.txt
+# tab delimited file with info about each sample. I think the columns are Sample, Sex, PCW, RIN, and ReadLength
 sample_info: Data/SampleInfo.txt
+
+# tab delimited file with info about fastq files. Columns are filename, library (sampleID-run_number), Batch, and location
 seqfile: Data/sequences.txt
+
+# tab delimited file with info about genotyping files. Columns are Sample, FID, IID, VCF_name, and Column_number_in_vcf
 genotyping_info: Data/GenotypingInfo.txt
